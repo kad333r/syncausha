@@ -42,7 +42,7 @@ CATALOG: dict[str, dict[str, str]] = {
     },
     # --- Erreurs de l'API Ausha (ausha_client.py) --------------------------------
     "err_token_invalid_chars": {
-        "en": "Invalid Ausha token (characters not allowed).",
+        "en": "Invalid Ausha token (it contains characters that aren't allowed).",
         "fr": "Jeton Ausha invalide (caractères non autorisés).",
         "ar": "رمز الوصول إلى Ausha غير صالح (أحرف غير مسموح بها).",
     },
@@ -57,7 +57,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "ar": "تمت مقاطعة الإرسال.",
     },
     "err_rate_limited": {
-        "en": "Ausha asks to wait {seconds} s: retrying at the next sync.",
+        "en": "Ausha asked to wait {seconds} s; will retry at the next sync.",
         "fr": "Ausha demande de patienter {seconds} s : nouvel essai au prochain passage.",
         "ar": "يطلب Ausha الانتظار {seconds} ثانية: ستُعاد المحاولة في المزامنة التالية.",
     },
@@ -114,12 +114,12 @@ CATALOG: dict[str, dict[str, str]] = {
     },
     "cycle_existing_files_ignored": {
         "en": "Existing files ignored: {n}",
-        "fr": "{n} fichier(s) déjà présent(s) ignoré(s)",
+        "fr": "Fichiers déjà présents ignorés : {n}",
         "ar": "الملفات الموجودة مسبقًا المتجاهَلة: {n}",
     },
     "cycle_files_need_attention": {
         "en": "Files needing attention: {n}",
-        "fr": "{n} fichier(s) à traiter",
+        "fr": "Fichiers à traiter : {n}",
         "ar": "الملفات التي تحتاج إلى معالجة: {n}",
     },
     "err_no_rule": {
@@ -128,7 +128,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "ar": "لا توجد قاعدة تطابق هذا الملف",
     },
     "err_upload_being_checked": {
-        "en": "Previous upload being checked on Ausha",
+        "en": "Checking the previous upload on Ausha",
         "fr": "Envoi précédent en cours de vérification sur Ausha",
         "ar": "جارٍ التحقق من الإرسال السابق على Ausha",
     },
@@ -153,9 +153,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "ar": "تم نشر الحلقة، لكن تعذّرت إضافتها إلى قائمة التشغيل: {detail}",
     },
     "dry_already_on_ausha": {
-        "en": "Already on Ausha — would not be published",
-        "fr": "Déjà présent sur Ausha — ne serait pas publié",
-        "ar": "الحلقة موجودة مسبقًا على Ausha — لن تُنشر",
+        "en": "Already on Ausha, would not be published",
+        "fr": "Déjà présent sur Ausha, ne serait pas publié",
+        "ar": "موجودة مسبقًا على Ausha، لن تُنشر",
     },
     "dry_would_publish": {
         "en": "Would be published to {show}",
@@ -293,7 +293,7 @@ CATALOG: dict[str, dict[str, str]] = {
     "activity_more_ignored": {
         "en": "… and {n} more",
         "fr": "… et {n} autres",
-        "ar": "… و{n} أخرى",
+        "ar": "… وملفات أخرى: {n}",
     },
     "activity_no_folder": {
         "en": "No folder chosen",
@@ -313,7 +313,7 @@ CATALOG: dict[str, dict[str, str]] = {
     "activity_next_sync": {
         "en": "next sync in {minutes} min",
         "fr": "prochain passage dans {minutes} min",
-        "ar": "المزامنة التالية بعد {minutes} دقيقة",
+        "ar": "المزامنة التالية خلال {minutes} د",
     },
     "activity_create_rule": {
         "en": "Create a rule",
@@ -530,9 +530,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "ar": "لا توجد برامج",
     },
     "settings_test_failed": {
-        "en": "Failed: {detail}",
-        "fr": "Échec : {detail}",
-        "ar": "فشل: {detail}",
+        "en": "Connection failed: {detail}",
+        "fr": "Échec de la connexion : {detail}",
+        "ar": "فشل الاتصال: {detail}",
     },
     "settings_field_folder": {
         "en": "Watched folder",
@@ -585,7 +585,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "ar": "لم يُحفظ رمز الوصول: {detail}",
     },
     "settings_autostart_failed": {
-        "en": "Start with Windows setting not changed: {detail}",
+        "en": "Couldn't change “Start with Windows”: {detail}",
         "fr": "Démarrage automatique non modifié : {detail}",
         "ar": "لم يُعدَّل خيار التشغيل مع بدء Windows: {detail}",
     },
@@ -622,9 +622,9 @@ CATALOG: dict[str, dict[str, str]] = {
         "ar": "المزامنة الآن",
     },
     "tray_pause": {
-        "en": "Pause",
+        "en": "Pause sync",
         "fr": "Mettre en pause",
-        "ar": "إيقاف مؤقت",
+        "ar": "إيقاف المزامنة مؤقتًا",
     },
     "tray_resume": {
         "en": "Resume sync",
@@ -653,7 +653,7 @@ CATALOG: dict[str, dict[str, str]] = {
         "ar": "{title} · {detail}",
     },
     "notif_no_rule": {
-        "en": "No rule",
+        "en": "No matching rule",
         "fr": "Aucune règle",
         "ar": "لا توجد قاعدة",
     },
@@ -680,7 +680,7 @@ CATALOG: dict[str, dict[str, str]] = {
     "notif_rejected": {
         "en": "Rejected by Ausha",
         "fr": "Refusé par Ausha",
-        "ar": "رفضه Ausha",
+        "ar": "رفض Ausha الملف",
     },
     "notif_partial": {
         "en": "Published with an issue",
@@ -704,7 +704,7 @@ CATALOG: dict[str, dict[str, str]] = {
     },
     "notif_baseline_body": {
         "en": "Existing files ignored: {count}. Only new files will be published.",
-        "fr": "{count} fichier(s) déjà présent(s) ignoré(s). Seuls les nouveaux fichiers seront publiés.",
+        "fr": "Fichiers déjà présents ignorés : {count}. Seuls les nouveaux fichiers seront publiés.",
         "ar": "الملفات الموجودة مسبقًا المتجاهَلة: {count}. لن تُنشر إلا الملفات الجديدة.",
     },
     "notif_auth_error": {

@@ -328,7 +328,7 @@ def test_dry_run_reports_existing_episode_without_writing(env):
     assert env.engine.run_cycle().state == "ok"
     assert env.client.calls == []
     assert [(e.kind, render(e.detail, lang="fr")) for e in env.events] == [
-        ("dry_run", "Déjà présent sur Ausha — ne serait pas publié")
+        ("dry_run", "Déjà présent sur Ausha, ne serait pas publié")
     ]
     entry = only_entry(env)
     assert (entry.status, entry.step) == (Status.EN_ATTENTE, Step.NONE)
@@ -589,7 +589,7 @@ def test_files_present_when_the_folder_is_chosen_are_ignored_without_calling_aus
     )
     result = engine.run_cycle()
     assert (result.state, result.count, result.folder) == ("baseline", 2, str(env.folder))
-    assert render(result.message, lang="fr") == "2 fichier(s) déjà présent(s) ignoré(s)"
+    assert render(result.message, lang="fr") == "Fichiers déjà présents ignorés : 2"
     assert factory_calls == []
     assert env.client.reads == [] and env.client.calls == []
     assert env.events == []

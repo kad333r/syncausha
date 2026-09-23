@@ -1,10 +1,9 @@
 """Page Activité : état, fichiers à traiter, historique récent, fichiers ignorés."""
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QDateTime, QLocale, Qt, QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from syncausha.i18n import render, tr
@@ -37,6 +36,12 @@ def state_text(state: str) -> str:
     """Texte de l'état dans la langue active (l'identifiant brut s'il est inconnu)."""
     key = STATE_KEYS.get(state)
     return tr(key) if key else state
+
+
+def format_time(timestamp: float) -> str:
+    """Date et heure courtes au format de la langue (QLocale par défaut, réglée par apply_language : chiffres
+    0-9 en arabe aussi)."""
+    return QLocale().toString(QDateTime.fromSecsSinceEpoch(int(timestamp)), QLocale.FormatType.ShortFormat)
 
 
 class ActivityPage(QWidget):
@@ -143,7 +148,7 @@ class ActivityPage(QWidget):
         return Row(entry.filename, tr("activity_present_before"), button)
 
     def _recent_row(self, entry: Entry) -> Row:
-        when = datetime.fromtimestamp(entry.updated_at).strftime("%d/%m %H:%M")
+        when = format_time(entry.updated_at)
         parts = [isolate(entry.show_name), when] if entry.show_name else [when]
         if entry.status is Status.EN_COURS:
             percent = self.controller.progress.get(episode_title(Path(entry.filename)), 0)

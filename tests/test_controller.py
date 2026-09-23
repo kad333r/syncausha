@@ -124,7 +124,7 @@ def test_baseline_saves_the_folder_notifies_and_runs_the_real_cycle(controller, 
     assert load_config(controller.config_path).baseline_folder == "D:/Podcasts"
     assert messages == [(
         "Dossier pris en compte",
-        "3 fichier(s) déjà présent(s) ignoré(s). Seuls les nouveaux fichiers seront publiés.",
+        "Fichiers déjà présents ignorés : 3. Seuls les nouveaux fichiers seront publiés.",
     )]
     assert syncs == [True]
 

@@ -92,6 +92,15 @@ def test_nested_messages_are_isolated_once_in_arabic():
     assert render(stored, lang="en") == "Ep 1: Too big (HTTP 422)"
 
 
+def test_dry_run_lines_have_a_single_dash():
+    """« {title} — {detail} » : le verdict lui-même ne contient pas de tiret cadratin."""
+    stored = msg("dry_line", title="MARS ATTACK 10", detail=msg("dry_already_on_ausha"))
+    for lang in LANGUAGES:
+        assert render(stored, lang=lang).count("—") == 1, lang
+    assert render(stored, lang="en") == "MARS ATTACK 10 — Already on Ausha, would not be published"
+    assert render(stored, lang="fr") == "MARS ATTACK 10 — Déjà présent sur Ausha, ne serait pas publié"
+
+
 def test_set_language_rejects_unknown():
     with pytest.raises(ValueError):
         i18n.set_language("de")

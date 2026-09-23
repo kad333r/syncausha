@@ -1,9 +1,11 @@
 """Changement de langue : langue appliquée à Qt, fenêtre reconstruite, icône retraduite."""
+import string
 import sys
+from dataclasses import replace
 
 import pytest
 import shiboken6
-from PySide6.QtCore import QCoreApplication, QEvent, QLocale, Qt, QTranslator
+from PySide6.QtCore import QCoreApplication, QDateTime, QEvent, QLocale, Qt, QTranslator
 from PySide6.QtWidgets import QSpinBox
 
 from syncausha import autostart, i18n
@@ -12,10 +14,11 @@ from syncausha.i18n import tr
 from syncausha.journal import Journal
 from syncausha.ui import controller as controller_module
 from syncausha.ui import style
-from syncausha.ui.activity_page import state_text
+from syncausha.ui.activity_page import format_time, state_text
 from syncausha.ui.controller import AppController
 from syncausha.ui.language import apply_language
 from syncausha.ui.main_window import RULES, SETTINGS, MainWindow
+from syncausha.ui.settings_page import SettingsPage
 from syncausha.ui.tray import Tray
 
 
@@ -214,6 +217,47 @@ def test_saving_without_language_change_does_not_rebuild(qapp, window):
     assert rebuilt == []
     assert window.settings is settings and window.sidebar is sidebar
     assert settings.saved_label.text() == "Settings saved"
+
+
+def test_saving_without_touching_the_language_does_not_pin_it(qapp, controller):
+    """Langue venue de l'installateur (aucune dans les réglages) : l'enregistrer sans toucher à la liste ne la
+    fige pas, une réinstallation dans une autre langue sera suivie. La choisir, si."""
+    apply_language(qapp, "fr")
+    page = SettingsPage(controller)
+    changes = []
+    page.language_changed.connect(changes.append)
+    assert page.language.currentData() == "fr"
+    page.interval.setValue(45)
+    page._save()
+    assert (controller.config.language, controller.config.interval_minutes) == ("", 45)
+    assert changes == []
+    page.language.setCurrentIndex(page.language.findData("ar"))
+    page._save()
+    assert controller.config.language == "ar"
+    assert changes == ["ar"]
+
+
+def test_saving_keeps_a_language_chosen_earlier(qapp, controller):
+    controller.update_config(replace(controller.config, language="fr"))
+    apply_language(qapp, "fr")
+    page = SettingsPage(controller)
+    page.interval.setValue(45)
+    page._save()
+    assert controller.config.language == "fr"
+
+
+def test_activity_dates_follow_the_language_with_western_digits(qapp):
+    """Dates au format de la langue ; en arabe, chiffres 0-9 même si Windows est réglé en ar-SA."""
+    timestamp = 1_790_000_000  # septembre 2026
+    QLocale.setDefault(QLocale("ar_SA"))
+    apply_language(qapp, "ar")
+    text = format_time(timestamp)
+    digits = [char for char in text if char.isdigit()]
+    assert "2026" in text
+    assert digits and all(char in string.digits for char in digits)
+    apply_language(qapp, "fr")
+    expected = QLocale("fr_FR").toString(QDateTime.fromSecsSinceEpoch(timestamp), QLocale.FormatType.ShortFormat)
+    assert format_time(timestamp) == expected
 
 
 def test_tray_is_retranslated_after_a_language_change(qapp, window, controller):

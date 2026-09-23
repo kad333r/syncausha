@@ -8,14 +8,14 @@
 - [ ] L'app se lance en fin d'installation, fenêtre sur Réglages.
 
 ## Réglages
-- [ ] Mauvais jeton + « Tester la connexion » → « Échec : … (HTTP 401) ».
+- [ ] Mauvais jeton + « Tester la connexion » → « Échec de la connexion : … (HTTP 401) ».
 - [ ] Bon jeton → « Connexion réussie. Émissions : … ».
 - [ ] « Enregistrer » affiche « Réglages enregistrés » ; le jeton n'apparaît pas dans `config.json`.
 - [ ] Décocher « Lancer au démarrage » supprime la valeur `SyncAusha` de HKCU\...\Run ; la recocher la recrée.
 - [ ] Un `config.json` corrompu est renommé en `config.json.illisible` et l'app démarre avec des réglages vides (pas de plantage).
 
 ## Choix du dossier
-- [ ] Choisir un dossier qui contient déjà des fichiers audio : notification « Dossier pris en compte » (« N fichier(s) déjà présent(s) ignoré(s). Seuls les nouveaux fichiers seront publiés. »), rien n'est publié sur Ausha.
+- [ ] Choisir un dossier qui contient déjà des fichiers audio : notification « Dossier pris en compte » (« Fichiers déjà présents ignorés : N. Seuls les nouveaux fichiers seront publiés. »), rien n'est publié sur Ausha.
 - [ ] Ces fichiers apparaissent dans Activité → « Ignorés — déjà présents au choix du dossier » (20 au plus, puis « … et N autres »).
 - [ ] « Publier quand même » sur l'un d'eux : il est publié aussitôt, les autres restent ignorés.
 - [ ] Un fichier ajouté au dossier après ce choix est publié au passage suivant.
@@ -59,6 +59,8 @@
 - [ ] L'app démarre dans la langue choisie à l'installation (valeur `Language` de `HKCU\Software\SyncAusha` = `en` / `fr` / `ar`).
 - [ ] Réglages → Langue, puis « Enregistrer » : la fenêtre change aussitôt de langue, sans redémarrage, et reste sur Réglages ; le menu et l'info-bulle de l'icône suivent.
 - [ ] Après redémarrage, l'app reste dans la langue choisie dans Réglages, même si l'installateur a été relancé dans une autre langue.
+- [ ] Enregistrer les Réglages sans toucher à la Langue ne la fige pas : après réinstallation dans une autre langue, l'app démarre dans celle de l'installateur.
+- [ ] Activité → Récent : dates au format de la langue (chiffres 0-9 en arabe).
 - [ ] Les lignes déjà présentes dans Activité (erreurs, fichiers à traiter) s'affichent dans la nouvelle langue.
 - [ ] Arabe : toute l'interface de droite à gauche (barre latérale à droite, textes alignés à droite, flèches des listes déroulantes du bon côté), aucun texte coupé, chiffres occidentaux.
 - [ ] Boutons standard (Oui / Non de la confirmation de suppression d'une règle) dans la langue active.

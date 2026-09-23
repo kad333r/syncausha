@@ -199,13 +199,15 @@ def test_tray_texts_follow_the_state(controller, syncs):
     controller.set_paused(True)
     assert tray.toolTip() == "SyncAusha — Paused"
     assert tray.pause_action.text() == "Resume sync"
+    controller.set_paused(False)
+    assert tray.pause_action.text() == "Pause sync"
 
 
 def test_token_test_result_replaces_the_hint(controller, french):
     page = SettingsPage(controller)
     assert page.test_result.text() == tr("settings_token_hint")
     page._on_test_failed(Exception("jeton refusé"))
-    assert page.test_result.text() == "Échec : jeton refusé"
+    assert page.test_result.text() == "Échec de la connexion : jeton refusé"
     assert page.test_result.objectName() == "error"
     page.load()
     assert page.test_result.text() == tr("settings_token_hint")

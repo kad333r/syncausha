@@ -116,7 +116,8 @@ class SettingsPage(QWidget):
 
     def load(self) -> None:
         config = self.controller.config
-        self.language.setCurrentIndex(self.language.findData(i18n.current_language()))
+        self._shown_language = i18n.current_language()  # réglages ou installateur : voir _save
+        self.language.setCurrentIndex(self.language.findData(self._shown_language))
         self.token.clear()
         self.token.setPlaceholderText(
             tr("settings_token_saved_placeholder") if self.controller.has_token() else tr("settings_token_placeholder")
@@ -170,10 +171,13 @@ class SettingsPage(QWidget):
             except Exception as exc:  # Gestionnaire d'identifiants indisponible ou refus
                 self.show_saved(msg("settings_token_not_saved", detail=exc))
                 return
-        language = self.language.currentData()
+        chosen = self.language.currentData()
+        # Langue écrite dans les réglages seulement si elle a été changée ici : sinon celle de l'installateur
+        # (réglages vides) n'est pas figée, et une réinstallation dans une autre langue reste suivie.
+        picked = chosen != self._shown_language
         config = replace(
             self.controller.config,
-            language=language,
+            language=chosen if picked else self.controller.config.language,
             watch_folder=self.folder.text(),
             interval_minutes=self.interval.value(),
             paused=self.paused.isChecked(),
@@ -191,8 +195,8 @@ class SettingsPage(QWidget):
         self.show_saved(message)
         if not config.paused:
             self.controller.sync_now()
-        if language != i18n.current_language():  # en dernier : tout est enregistré avant la reconstruction
-            self.language_changed.emit(language)
+        if picked and chosen != i18n.current_language():  # en dernier : tout est enregistré avant la reconstruction
+            self.language_changed.emit(chosen)
 
     def _open_logs(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(app_data_dir() / "logs")))
