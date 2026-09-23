@@ -1,21 +1,8 @@
-import os
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-import pytest  # noqa: E402
-
-QtWidgets = pytest.importorskip("PySide6.QtWidgets")
-
-from syncausha.config import Config, Rule, save_config  # noqa: E402
-from syncausha.journal import Journal, Status  # noqa: E402
-from syncausha.ui import controller as controller_module  # noqa: E402
-from syncausha.ui.controller import AppController  # noqa: E402
-from syncausha.ui.main_window import ACTIVITY, MainWindow  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+from syncausha.config import Config, Rule, save_config
+from syncausha.journal import Journal, Status
+from syncausha.ui import controller as controller_module
+from syncausha.ui.controller import AppController
+from syncausha.ui.main_window import ACTIVITY, MainWindow
 
 
 def test_main_window_builds_and_navigates(qapp, tmp_path, monkeypatch):

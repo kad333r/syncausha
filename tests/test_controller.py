@@ -1,17 +1,9 @@
 import threading
 
-import pytest
-from PySide6.QtWidgets import QApplication
-
 import syncausha.ui.controller as controller_module
 from syncausha.config import Config
 from syncausha.journal import Journal
 from syncausha.ui.controller import AppController
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    return QApplication.instance() or QApplication([])
 
 
 def test_make_client_passes_the_cancel_event(monkeypatch):

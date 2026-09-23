@@ -29,13 +29,12 @@ def main(argv: list[str] | None = None) -> int:
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(app_icon())
 
-    instance = SingleInstance()
-    if not instance.try_acquire():
-        return 0
-
     data_dir = app_data_dir()
     setup_logging(data_dir / "logs")
     sys.excepthook = lambda *exc_info: log.critical("Erreur non gérée", exc_info=exc_info)
+    instance = SingleInstance(data_dir / "syncausha.lock")
+    if not instance.try_acquire():
+        return 0
     log.info("Démarrage de SyncAusha %s", __version__)
 
     apply_style(app)
@@ -52,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     controller.start()
 
     code = app.exec()
+    instance.close()
     if not controller.shutdown():
         # Détruire un QThread encore actif tue le processus (0xC0000409) : on sort sans
         # fermer le journal, l'entrée « uploading » fera vérifier l'épisode au redémarrage.
