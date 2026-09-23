@@ -172,6 +172,12 @@ def test_success_with_invalid_json_is_transient(api, client):
         client.list_shows()
 
 
+def test_write_success_with_non_object_json_is_still_success(api, client):
+    route = api.post("/playlists/7/podcasts/1").respond(200, json=True)
+    client.add_to_playlist(7, 1)
+    assert route.called
+
+
 def test_success_with_empty_body_is_empty(api, client):
     route = api.post("/playlists/7/podcasts/1").respond(204)
     client.add_to_playlist(7, 1)

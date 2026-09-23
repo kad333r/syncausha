@@ -176,7 +176,7 @@ class AushaClient:
                 raise TransientError(f"Ausha demande de patienter {delay:.0f} s : nouvel essai au prochain passage.")
             log.info("Ausha demande une pause de %.0f s", delay)
             self._wait(delay)
-        return _parse(response, auth_probe=method == "GET" and url == _GRANTED_SHOWS_URL)
+        return _parse(response, auth_probe=method == "GET" and url == _GRANTED_SHOWS_URL, strict=method == "GET")
 
     def _wait(self, delay: float) -> None:
         if self._cancel is None:
@@ -246,11 +246,13 @@ def _retry_after(response: httpx.Response) -> float:
         return DEFAULT_RETRY_AFTER
 
 
-def _parse(response: httpx.Response, *, auth_probe: bool = False) -> dict[str, Any]:
+def _parse(response: httpx.Response, *, auth_probe: bool = False, strict: bool = True) -> dict[str, Any]:
     """Corps JSON d'une réponse 2xx, ou erreur typée.
 
     Un 403 n'invalide le jeton que sur la liste des émissions (auth_probe) : ailleurs, c'est
     un refus ponctuel (une émission, une playlist) qui ne doit pas bloquer toute la synchro.
+    Hors lecture (strict=False), un 2xx au corps inattendu (`true`, `[]`…) reste un succès :
+    l'action a été faite, la réessayer risquerait de la refaire ou de finir en échec.
     """
     status = response.status_code
     if 200 <= status < 300:
@@ -261,6 +263,8 @@ def _parse(response: httpx.Response, *, auth_probe: bool = False) -> dict[str, A
         except ValueError:
             body = None
         if not isinstance(body, dict):
+            if not strict:
+                return {}
             raise TransientError(f"Réponse inattendue d'Ausha (HTTP {status}).")
         return body
     if 300 <= status < 400:
