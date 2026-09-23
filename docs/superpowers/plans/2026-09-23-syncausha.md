@@ -1861,7 +1861,7 @@ class SyncEngine:
             except Exception as exc:
                 log.exception("Erreur inattendue sur %s", ready.path.name)
                 self._record_failure(file_hash, episode_title(ready.path), f"Erreur inattendue : {exc}")
-        self.journal.forget_unresolved(seen)
+        self.journal.forget_unresolved(seen, {path.name for path in folder.iterdir()})
         attention = self.journal.needing_attention()
         if attention:
             return CycleResult("attention", f"{len(attention)} fichier(s) à traiter")
@@ -2561,6 +2561,7 @@ class AppController(QObject):
         self.journal = journal
         self.state, self.message = ("paused" if self.config.paused else "ok"), ""
         self.busy = False
+        self._rerun_requested = False
         self.auth_blocked = False
         self.progress: dict[str, int] = {}
         self.dry_run_lines: list[str] = []
@@ -2593,7 +2594,9 @@ class AppController(QObject):
 
     def sync_now(self) -> None:
         if self.busy:
+            self._rerun_requested = True  # relancé dès la fin du cycle en cours
             return
+        self._rerun_requested = False
         self.busy = True
         self._pending_dry_run = []
         self._set_state("syncing", "")
@@ -2642,6 +2645,8 @@ class AppController(QObject):
         self._last_result_state = result.state
         self._set_state(result.state, result.message)
         self.activity_changed.emit()
+        if self._rerun_requested:
+            self.sync_now()
 
     def _set_state(self, state: str, message: str) -> None:
         self.state, self.message = state, message
@@ -2984,7 +2989,11 @@ class SettingsPage(QWidget):
     def _save(self) -> None:
         token = self.token.text().strip()
         if token:
-            self.controller.update_token(token)
+            try:
+                self.controller.update_token(token)
+            except Exception as exc:  # Gestionnaire d'identifiants indisponible ou refus
+                self.saved_label.setText(f"Jeton non enregistré : {exc}")
+                return
         config = replace(
             self.controller.config,
             watch_folder=self.folder.text(),
@@ -3539,7 +3548,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from syncausha import __version__
 from syncausha.config import app_data_dir
-from syncausha.journal import Journal
+from syncausha.journal import open_journal
 from syncausha.logging_setup import setup_logging
 from syncausha.ui.controller import AppController
 from syncausha.ui.icons import app_icon
@@ -3570,7 +3579,7 @@ def main(argv: list[str] | None = None) -> int:
 
     apply_style(app)
     watch_color_scheme(app)
-    journal = Journal(data_dir / "journal.db")
+    journal = open_journal(data_dir / "journal.db")
     controller = AppController(data_dir / "config.json", journal)
     window = MainWindow(controller)
     tray = Tray(controller, window)
