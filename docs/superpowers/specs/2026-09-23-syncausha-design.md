@@ -120,7 +120,7 @@ build.ps1           PyInstaller + Inno Setup → SyncAusha-Setup.exe
    1. Calculer (ou lire en cache) l'empreinte. Statut `publie`, `deja_present` ou `rejete` dans le journal → ignorer. Statut `echec` → ignorer jusqu'à « Réessayer ».
    2. Chercher la règle. Aucune → `sans_regle` (notification une seule fois par fichier). Règle invalide → `regle_cassee` + notification.
    3. Si `step = none` : chercher dans l'émission un épisode dont le nom est égal au titre (insensible à la casse). Trouvé → `deja_present`, passer au fichier suivant.
-   4. Si `step = none` : créer l'épisode (audio, titre, description, `state=active`) ; enregistrer aussitôt `episode_id` et `step = created`.
+   4. `status = en_cours`. Si `step = none` : créer l'épisode (audio, titre, description, `state=active`) ; enregistrer aussitôt `episode_id` et `step = created`.
    5. Si `step = created` et image dans la règle : envoyer l'image ; `step = image_done`.
    6. Si playlist dans la règle : ajouter l'épisode ; `step = playlist_done`.
    7. `status = publie`, notification « Publié : <titre> ».
