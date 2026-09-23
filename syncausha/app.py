@@ -1,14 +1,19 @@
-"""Point d'entrée : assemble réglages, journal, contrôleur, fenêtre et icône."""
+"""Point d'entrée : assemble réglages, journal, contrôleur, fenêtre et icône.
+
+Options : --minimized (démarrage de Windows), --quit et --forget-token (désinstallation,
+mise à jour : fermer l'instance en cours, retirer le jeton), sans interface.
+"""
 from __future__ import annotations
 
 import logging
 import os
 import sys
 
+from PySide6.QtCore import QLibraryInfo, QTranslator
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from syncausha import __version__
-from syncausha.config import app_data_dir
+from syncausha.config import app_data_dir, set_token
 from syncausha.journal import open_journal
 from syncausha.logging_setup import setup_logging
 from syncausha.ui.controller import AppController
@@ -20,14 +25,23 @@ from syncausha.ui.tray import Tray
 
 log = logging.getLogger(__name__)
 
+# Guetté par l'installateur (AppMutex) : SyncAusha doit être fermé avant de remplacer ses fichiers.
+RUNNING_MUTEX = "SyncAushaRunning"
+
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv if argv is None else argv
+    if "--forget-token" in argv:
+        return _forget_token()
+    if "--quit" in argv:
+        SingleInstance(app_data_dir() / "syncausha.lock").request("quit")  # sans effet si aucune ne tourne
+        return 0
     app = QApplication(argv)
     app.setApplicationName("SyncAusha")
     app.setApplicationVersion(__version__)
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(app_icon())
+    _install_qt_translation(app)
 
     data_dir = app_data_dir()
     setup_logging(data_dir / "logs")
@@ -35,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     instance = SingleInstance(data_dir / "syncausha.lock")
     if not instance.try_acquire():
         return 0
+    _create_mutex(RUNNING_MUTEX)
     log.info("Démarrage de SyncAusha %s", __version__)
 
     apply_style(app)
@@ -46,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     if QSystemTrayIcon.isSystemTrayAvailable():
         tray.show()
     instance.show_requested.connect(window.show_and_raise)
+    instance.quit_requested.connect(app.quit)
     if "--minimized" not in argv or window.needs_setup():
         window.show_and_raise()
     controller.start()
@@ -60,3 +76,30 @@ def main(argv: list[str] | None = None) -> int:
         os._exit(code)
     journal.close()
     return code
+
+
+def _forget_token() -> int:
+    """Retire le jeton du Gestionnaire d'identifiants Windows (désinstallation)."""
+    try:
+        set_token("")
+    except Exception:  # Gestionnaire d'identifiants indisponible : la désinstallation continue
+        return 1
+    return 0
+
+
+def _install_qt_translation(app: QApplication) -> None:
+    """Boutons des dialogues standard de Qt (Oui, Non, Annuler…) en français, si la traduction est là."""
+    translator = QTranslator(app)
+    if translator.load("qtbase_fr", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
+        app.installTranslator(translator)
+
+
+def _create_mutex(name: str) -> int | None:
+    """Mutex nommé Windows, jamais refermé : Windows le libère à la fin du processus."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32")
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    return kernel32.CreateMutexW(None, False, name)
