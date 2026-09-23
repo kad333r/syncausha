@@ -451,7 +451,7 @@ CATALOG: dict[str, dict[str, str]] = {
     "rules_show_and_playlist": {
         "en": "{show} → {playlist}",
         "fr": "{show} → {playlist}",
-        "ar": "{show} ← {playlist}",
+        "ar": "{show} \u200f←\u200f {playlist}",  # RLM autour de la flèche : de droite à gauche entre deux noms latins
     },
     "rules_no_playlist": {
         "en": "No playlist",

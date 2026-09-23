@@ -3,13 +3,15 @@ import sys
 
 import pytest
 import shiboken6
-from PySide6.QtCore import QCoreApplication, QEvent, Qt, QTranslator
+from PySide6.QtCore import QCoreApplication, QEvent, QLocale, Qt, QTranslator
+from PySide6.QtWidgets import QSpinBox
 
 from syncausha import autostart, i18n
 from syncausha.config import Config, save_config
 from syncausha.i18n import tr
 from syncausha.journal import Journal
 from syncausha.ui import controller as controller_module
+from syncausha.ui import style
 from syncausha.ui.activity_page import state_text
 from syncausha.ui.controller import AppController
 from syncausha.ui.language import apply_language
@@ -76,6 +78,30 @@ def test_apply_language_sets_direction(qapp):
     apply_language(qapp, "fr")
     assert i18n.current_language() == "fr"
     assert qapp.layoutDirection() == Qt.LayoutDirection.LeftToRight
+
+
+def test_arabic_keeps_western_digits(qapp):
+    """Formats régionaux de Windows à chiffres arabes orientaux (ar-SA) : les compteurs restent en 0-9."""
+    QLocale.setDefault(QLocale("ar_SA"))
+    apply_language(qapp, "ar")
+    assert QLocale().toString(15) == "15"
+    spin = QSpinBox()
+    spin.setRange(5, 120)
+    spin.setValue(15)
+    assert spin.text() == "15"
+
+
+def test_apply_language_turns_the_stylesheet_sides(qapp):
+    """Retraits des listes et compteurs, bordure de la barre latérale : côté fin de lecture (gauche en arabe)."""
+    qapp.setStyleSheet(style.stylesheet(style.LIGHT))
+    try:
+        apply_language(qapp, "ar")
+        assert qapp.styleSheet() == style.stylesheet(style.palette(), rtl=True)
+        assert "QComboBox { padding-left: 24px; }" in qapp.styleSheet()
+        apply_language(qapp, "en")
+        assert "QComboBox { padding-right: 24px; }" in qapp.styleSheet()
+    finally:
+        qapp.setStyleSheet("")
 
 
 def test_apply_language_swaps_the_qt_translator(qapp):

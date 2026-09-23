@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton
 from syncausha import autostart, i18n
 from syncausha.ausha_client import Show
 from syncausha.config import Config, Rule, save_config
-from syncausha.i18n import msg, tr
+from syncausha.i18n import msg, render, tr
 from syncausha.journal import Journal, Status
 from syncausha.ui import controller as controller_module
 from syncausha.ui import rules_page as rules_page_module
@@ -17,6 +17,7 @@ from syncausha.ui.main_window import ACTIVITY, MainWindow
 from syncausha.ui.rules_page import RulesPage
 from syncausha.ui.settings_page import SettingsPage
 from syncausha.ui.tray import Tray
+from syncausha.ui.widgets import Row, bidi_text
 
 
 def test_main_window_builds_and_navigates(qapp, tmp_path, monkeypatch):
@@ -207,6 +208,23 @@ def test_token_test_result_replaces_the_hint(controller, french):
     page.load()
     assert page.test_result.text() == tr("settings_token_hint")
     assert page.test_result.objectName() == "muted"
+
+
+def test_arabic_labels_starting_with_latin_text_read_right_to_left(qapp):
+    """RLM en tête : un nom de fichier (isolé, donc intact) ou une phrase qui commence par un titre latin
+    s'affiche de droite à gauche, aligné à droite ; une phrase arabe reste telle quelle."""
+    rlm, fsi, pdi = "\u200f", "\u2068", "\u2069"
+    i18n.set_language("ar")
+    row = Row("2024-05 MARS ATTACK (bonus).mp3", tr("err_no_rule"))
+    title, subtitle = row.findChildren(QLabel)
+    assert title.text().startswith(rlm)
+    assert title.text() == f"{rlm}{fsi}2024-05 MARS ATTACK (bonus).mp3{pdi}"
+    assert subtitle.text() == tr("err_no_rule")
+    line = render(msg("dry_line", title="LE DEBRIEF 45", detail=msg("dry_would_publish", show="Silicon Talk")))
+    assert bidi_text(line) == rlm + line
+    assert bidi_text(bidi_text(line)) == bidi_text(line)
+    i18n.set_language("en")
+    assert bidi_text("MARS ATTACK 12.mp3") == "MARS ATTACK 12.mp3"
 
 
 def test_stylesheet_is_complete_for_both_palettes():

@@ -29,7 +29,7 @@ IMAGES = {name: (ASSETS / f"{name}.png").as_posix() for name in ("check", "chevr
 
 _QSS = Template("""
 QWidget { background: $bg; color: $text; font-family: "Segoe UI"; font-size: 10pt; }
-QListWidget#sidebar { background: $sidebar; border: none; border-right: 1px solid $border; padding: 16px 8px; outline: 0; }
+QListWidget#sidebar { background: $sidebar; border: none; border-$end: 1px solid $border; padding: 16px 8px; outline: 0; }
 QListWidget#sidebar::item { padding: 8px 12px; margin: 1px 0; border-radius: 6px; color: $muted; }
 QListWidget#sidebar::item:hover { background: $hover; color: $text; }
 QListWidget#sidebar::item:selected { background: $selected; color: $text; }
@@ -51,7 +51,7 @@ QPushButton#link { border: none; background: transparent; color: $accent; paddin
 QPushButton#link:hover { text-decoration: underline; }
 QLineEdit, QPlainTextEdit, QSpinBox, QComboBox { background: $surface; border: 1px solid $border; border-radius: 6px; padding: 5px 8px; selection-background-color: $accent; selection-color: $accent_text; }
 QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus { border: 1px solid $accent; }
-QComboBox { padding-right: 24px; }
+QComboBox { padding-$end: 24px; }
 QComboBox:hover, QSpinBox:hover { border-color: $border_strong; }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: center right; border: none; width: 24px; }
 QComboBox::down-arrow { image: url("$chevron_down"); width: 12px; height: 12px; }
@@ -59,10 +59,10 @@ QComboBoxPrivateContainer { background: $surface; border: 1px solid $border; }
 QComboBox QAbstractItemView { background: $surface; color: $text; border: none; padding: 4px; outline: 0; selection-background-color: $hover; selection-color: $text; }
 QComboBox QAbstractItemView::item { min-height: 24px; padding: 2px 8px; border: none; border-radius: 4px; }
 QComboBox QAbstractItemView::item:hover, QComboBox QAbstractItemView::item:selected { background: $hover; color: $text; }
-QSpinBox { padding-right: 24px; }
+QSpinBox { padding-$end: 24px; }
 QSpinBox::up-button, QSpinBox::down-button { subcontrol-origin: border; width: 20px; border: none; background: transparent; }
-QSpinBox::up-button { subcontrol-position: top right; margin: 3px 3px 0 0; border-top-right-radius: 4px; }
-QSpinBox::down-button { subcontrol-position: bottom right; margin: 0 3px 3px 0; border-bottom-right-radius: 4px; }
+QSpinBox::up-button { subcontrol-position: top right; margin-top: 3px; margin-$end: 3px; border-top-$end-radius: 4px; }
+QSpinBox::down-button { subcontrol-position: bottom right; margin-bottom: 3px; margin-$end: 3px; border-bottom-$end-radius: 4px; }
 QSpinBox::up-button:hover, QSpinBox::down-button:hover { background: $hover; }
 QSpinBox::up-arrow { image: url("$chevron_up"); width: 10px; height: 10px; }
 QSpinBox::down-arrow { image: url("$chevron_down"); width: 10px; height: 10px; }
@@ -103,8 +103,10 @@ def palette() -> dict[str, str]:
     return DARK if QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark else LIGHT
 
 
-def stylesheet(colors: dict[str, str]) -> str:
-    return _QSS.substitute(colors, **IMAGES)
+def stylesheet(colors: dict[str, str], rtl: bool = False) -> str:
+    """$end : côté de fin de lecture (droite, ou gauche en arabe) des retraits, marges et bordures.
+    Qt retourne seul la position des sous-contrôles (flèches des listes et des compteurs), pas le reste."""
+    return _QSS.substitute(colors, end="left" if rtl else "right", **IMAGES)
 
 
 def apply_style(app: QApplication, colors: dict[str, str] | None = None) -> None:
@@ -114,7 +116,17 @@ def apply_style(app: QApplication, colors: dict[str, str] | None = None) -> None
     colors = palette()
     app.setStyle("Fusion")
     app.setPalette(_qt_palette(colors))  # pour ce que la feuille de style ne couvre pas
-    app.setStyleSheet(stylesheet(colors))
+    app.setStyleSheet(stylesheet(colors, _is_rtl(app)))
+
+
+def follow_layout_direction(app: QApplication) -> None:
+    """Feuille de style remise au sens de lecture de l'application (après un changement de langue)."""
+    if app.styleSheet():  # thème déjà appliqué
+        app.setStyleSheet(stylesheet(palette(), _is_rtl(app)))
+
+
+def _is_rtl(app: QApplication) -> bool:
+    return app.layoutDirection() == Qt.LayoutDirection.RightToLeft
 
 
 def watch_color_scheme(app: QApplication) -> None:

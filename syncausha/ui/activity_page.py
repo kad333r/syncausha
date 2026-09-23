@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from syncausha.i18n import render, tr
@@ -12,7 +12,7 @@ from syncausha.journal import Entry, Status
 from syncausha.rules import episode_title
 from syncausha.ui.controller import AppController
 from syncausha.ui.style import palette
-from syncausha.ui.widgets import Row, clear_layout, make_label, pill, section_label
+from syncausha.ui.widgets import Row, bidi_text, clear_layout, isolate, joined, make_label, pill, section_label
 
 # Clés des textes d'état, traduites à l'affichage (la langue peut changer en cours de route).
 STATE_KEYS = {
@@ -66,7 +66,9 @@ class ActivityPage(QWidget):
         scroll.setWidgetResizable(True)
         content = QWidget()
         self.sections = QVBoxLayout(content)
-        self.sections.setContentsMargins(0, 0, 8, 0)
+        # Écart avec la barre de défilement, de son côté (à gauche en arabe : Qt ne retourne pas les marges).
+        rtl = self.layoutDirection() == Qt.LayoutDirection.RightToLeft
+        self.sections.setContentsMargins(8 if rtl else 0, 0, 0 if rtl else 8, 0)
         scroll.setWidget(content)
         layout.addWidget(scroll, 1)
 
@@ -109,9 +111,9 @@ class ActivityPage(QWidget):
     def _update_header(self) -> None:
         c = self.controller
         color = palette()[STATE_COLOR.get(c.state, "muted")]
-        status = f'<span style="color:{color}">●</span>&nbsp;{state_text(c.state)}'
+        status = f'<span style="color:{color}">●</span>&nbsp;{bidi_text(state_text(c.state))}'
         self.status_label.setText(status)
-        parts = [c.config.watch_folder or tr("activity_no_folder")]
+        parts = [isolate(c.config.watch_folder) or tr("activity_no_folder")]
         if c.busy:
             parts.append(tr("activity_sync_running"))
         elif c.auth_blocked:
@@ -120,7 +122,7 @@ class ActivityPage(QWidget):
             parts.append(tr("activity_next_sync", minutes=max(1, round(c.seconds_until_next_cycle() / 60))))
         if c.message and c.state not in ("ok", "syncing"):
             parts.append(render(c.message))
-        self.detail_label.setText(" · ".join(parts))
+        self.detail_label.setText(joined(parts))
         self.sync_button.setEnabled(not c.busy)
 
     def _attention_row(self, entry: Entry) -> Row:
@@ -142,7 +144,7 @@ class ActivityPage(QWidget):
 
     def _recent_row(self, entry: Entry) -> Row:
         when = datetime.fromtimestamp(entry.updated_at).strftime("%d/%m %H:%M")
-        subtitle = f"{entry.show_name} · {when}" if entry.show_name else when
+        parts = [isolate(entry.show_name), when] if entry.show_name else [when]
         if entry.status is Status.EN_COURS:
             percent = self.controller.progress.get(episode_title(Path(entry.filename)), 0)
             badge = pill(tr("activity_uploading", percent=percent), "info")
@@ -152,7 +154,7 @@ class ActivityPage(QWidget):
             badge = pill(tr("activity_already_on_ausha"), "neutral")
         elif entry.attempts:
             badge = pill(tr("activity_retry_next_sync"), "warning")
-            subtitle = f"{subtitle} · {render(entry.last_error)}"
+            parts.append(render(entry.last_error))
         else:
             badge = pill(tr("activity_waiting"), "neutral")
-        return Row(Path(entry.filename).stem, subtitle, badge)
+        return Row(Path(entry.filename).stem, joined(parts), badge)

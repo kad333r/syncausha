@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from dataclasses import replace
 
-from PySide6.QtCore import QUrl, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -25,7 +25,7 @@ from syncausha import autostart, i18n
 from syncausha.config import MAX_INTERVAL, MIN_INTERVAL, app_data_dir
 from syncausha.i18n import LANGUAGES, msg, render, tr
 from syncausha.ui.controller import AppController, Catalog
-from syncausha.ui.widgets import make_label, set_tone
+from syncausha.ui.widgets import leading_alignment, make_label, set_tone
 
 
 class SettingsPage(QWidget):
@@ -54,6 +54,7 @@ class SettingsPage(QWidget):
         form.addRow(tr("settings_language"), self.language)
 
         self.token = QLineEdit()
+        self.token.setAlignment(leading_alignment() | Qt.AlignmentFlag.AlignVCenter)
         self.token.setEchoMode(QLineEdit.EchoMode.Password)
         test_button = QPushButton(tr("settings_test_connection"))
         test_button.clicked.connect(self._test)
@@ -69,6 +70,7 @@ class SettingsPage(QWidget):
         form.addRow(tr("settings_field_token"), token_field)
 
         self.folder = QLineEdit()
+        self.folder.setAlignment(leading_alignment() | Qt.AlignmentFlag.AlignVCenter)  # chemin latin à droite en arabe
         self.folder.setReadOnly(True)
         folder_button = QPushButton(tr("common_choose"))
         folder_button.clicked.connect(self._choose_folder)
