@@ -1,0 +1,31 @@
+[project]
+name = "syncausha"
+version = "1.0.0"
+description = "Publie automatiquement sur Ausha les podcasts d'un dossier"
+requires-python = ">=3.12"
+dependencies = [
+    "PySide6-Essentials>=6.10",
+    "httpx>=0.28",
+    "keyring>=25",
+    "Pillow>=11",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "respx>=0.22",
+    "pyinstaller>=6.16",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["syncausha*"]
+
+[tool.setuptools.package-data]
+syncausha = ["assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
