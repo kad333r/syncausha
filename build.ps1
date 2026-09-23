@@ -11,7 +11,8 @@ if ($LASTEXITCODE -ne 0) { throw "Installation des dependances impossible" }
 & $python -m pytest -q
 if ($LASTEXITCODE -ne 0) { throw "Des tests echouent : construction annulee" }
 
-& $python -m PyInstaller --noconfirm --clean --windowed --name SyncAusha `
+# --noupx : des DLL Qt compressees par UPX plantent au chargement et alertent les antivirus.
+& $python -m PyInstaller --noconfirm --clean --windowed --noupx --name SyncAusha `
     --icon syncausha\assets\icon.ico `
     --add-data "syncausha\assets;syncausha\assets" `
     run_syncausha.py
