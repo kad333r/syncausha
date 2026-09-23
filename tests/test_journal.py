@@ -53,15 +53,19 @@ def test_update_rejects_unknown_fields(journal):
         journal.update("h1", nope=1)
 
 
-def test_recent_and_attention_lists(journal):
-    for name in ("a", "b", "c", "d"):
+def test_recent_attention_and_ignored_lists(journal):
+    for name in ("a", "b", "c", "d", "e", "f"):
         journal.ensure(name, f"{name}.mp3", 1)
     journal.update("a", status=Status.PUBLIE)
     journal.update("b", status=Status.SANS_REGLE)
     journal.update("c", status=Status.EN_COURS)
     journal.update("d", status=Status.ECHEC)
+    journal.update("e", status=Status.IGNORE)
+    journal.update("f", status=Status.IGNORE)
     assert [e.hash for e in journal.recent()] == ["c", "a"]
     assert [e.hash for e in journal.needing_attention()] == ["d", "b"]
+    assert [e.hash for e in journal.ignored()] == ["f", "e"]
+    assert [e.hash for e in journal.ignored(limit=1)] == ["f"]
 
 
 def test_reset_for_retry(journal):
@@ -72,6 +76,26 @@ def test_reset_for_retry(journal):
     assert entry.status is Status.EN_ATTENTE
     assert entry.attempts == 0
     assert entry.last_error == ""
+
+
+def test_reset_for_retry_keeps_the_date_of_the_last_upload(journal):
+    # « Réessayer » ne doit pas relancer l'attente de 15 min d'un envoi resté sans réponse.
+    journal.ensure("h1", "a.mp3", 1)
+    journal.update("h1", status=Status.ECHEC, step=Step.UPLOADING, updated_at=500.0)
+    journal.reset_for_retry("h1")
+    entry = journal.get("h1")
+    assert (entry.status, entry.step, entry.updated_at) == (Status.EN_ATTENTE, Step.UPLOADING, 500.0)
+    journal.reset_for_retry("absent")  # sans effet
+
+
+def test_forget_unresolved_forgets_ignored_files_that_are_gone(journal):
+    journal.ensure("gone", "gone.mp3", 1)
+    journal.ensure("present", "present.mp3", 1)
+    journal.update("gone", status=Status.IGNORE)
+    journal.update("present", status=Status.IGNORE)
+    journal.forget_unresolved({"present"})
+    assert journal.get("gone") is None
+    assert journal.get("present").status is Status.IGNORE
 
 
 def test_forget_unresolved_keeps_created_and_published(journal):

@@ -16,6 +16,7 @@ def test_roundtrip(tmp_path):
     path = tmp_path / "config.json"
     config = Config(
         watch_folder="D:/Podcasts",
+        baseline_folder="D:/Podcasts",
         interval_minutes=30,
         dry_run=True,
         rules=[
@@ -85,9 +86,10 @@ def test_invalid_rules_are_skipped_individually(tmp_path):
 
 def test_wrong_type_field_keeps_default(tmp_path):
     path = tmp_path / "config.json"
-    path.write_text('{"paused": "false"}', encoding="utf-8")
+    path.write_text('{"paused": "false", "baseline_folder": 3}', encoding="utf-8")
     config = load_config(path)
     assert config.paused is False
+    assert config.baseline_folder == ""
 
 
 def test_token_roundtrip(monkeypatch):

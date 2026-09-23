@@ -24,6 +24,7 @@ class Status(StrEnum):
     DEJA_PRESENT = "deja_present"
     REJETE = "rejete"
     ECHEC = "echec"
+    IGNORE = "ignore"  # déjà dans le dossier quand il a été choisi
 
 
 class Step(StrEnum):
@@ -34,9 +35,11 @@ class Step(StrEnum):
     PLAYLIST_DONE = "playlist_done"
 
 
-# Statuts qu'un cycle ne retraite pas (seul « Réessayer » relance REJETE et ECHEC).
-FINAL_STATUSES = frozenset({Status.PUBLIE, Status.DEJA_PRESENT, Status.REJETE, Status.ECHEC})
+# Statuts qu'un cycle ne retraite pas (seuls « Réessayer » relance REJETE et ECHEC, et
+# « Publier quand même » IGNORE).
+FINAL_STATUSES = frozenset({Status.PUBLIE, Status.DEJA_PRESENT, Status.REJETE, Status.ECHEC, Status.IGNORE})
 ATTENTION_STATUSES = (Status.SANS_REGLE, Status.REGLE_CASSEE, Status.REJETE, Status.ECHEC)
+_NOT_RECENT = (*ATTENTION_STATUSES, Status.IGNORE)
 
 
 @dataclass
@@ -144,19 +147,28 @@ class Journal:
             self._db.execute(f"UPDATE files SET {assignments} WHERE hash = ?", (*params, file_hash))
 
     def reset_for_retry(self, file_hash: str) -> None:
-        self.update(file_hash, status=Status.EN_ATTENTE, attempts=0, last_error="")
+        """Remet le fichier en attente. updated_at est conservé : l'attente de 15 min d'une
+        création restée sans réponse ne repart pas de zéro."""
+        entry = self.get(file_hash)
+        if entry is not None:
+            self.update(file_hash, status=Status.EN_ATTENTE, attempts=0, last_error="", updated_at=entry.updated_at)
 
     def recent(self, limit: int = 50) -> list[Entry]:
-        return self._select(f"status NOT IN ({_placeholders()})", ATTENTION_STATUSES, limit)
+        return self._select(f"status NOT IN ({_placeholders(_NOT_RECENT)})", _NOT_RECENT, limit)
 
     def needing_attention(self) -> list[Entry]:
-        return self._select(f"status IN ({_placeholders()})", ATTENTION_STATUSES, -1)
+        return self._select(f"status IN ({_placeholders(ATTENTION_STATUSES)})", ATTENTION_STATUSES, -1)
+
+    def ignored(self, limit: int = 200) -> list[Entry]:
+        """Fichiers déjà présents quand le dossier a été choisi (limit=-1 : tous)."""
+        return self._select("status = ?", (Status.IGNORE,), limit)
 
     def forget_unresolved(self, keep: set[str], present_filenames: set[str] = frozenset()) -> None:
         """Oublie les fichiers disparus du dossier qui n'ont jamais donné d'épisode.
 
         Seules les entrées à l'étape « none » (jamais « uploading », dont l'épisode existe
-        peut-être) et dont le statut n'est ni publié ni déjà présent sont concernées, et
+        peut-être) et dont le statut n'est ni publié ni déjà présent (ignorées comprises)
+        sont concernées, et
         seulement si leur hash n'est pas dans keep ET que leur nom de fichier n'est pas dans
         present_filenames (un fichier retrouvé sous le même nom, même modifié, n'est donc
         pas oublié à tort).
@@ -190,8 +202,8 @@ def open_journal(path: Path) -> Journal:
         return Journal(path)
 
 
-def _placeholders() -> str:
-    return ", ".join("?" * len(ATTENTION_STATUSES))
+def _placeholders(values: tuple) -> str:
+    return ", ".join("?" * len(values))
 
 
 def _sha256(path: Path) -> str:

@@ -75,13 +75,16 @@ class Rule:
         return cls(**kwargs)
 
 
-_CONFIG_STR_FIELDS = ("watch_folder", "api_base_url")
+_CONFIG_STR_FIELDS = ("watch_folder", "baseline_folder", "api_base_url")
 _CONFIG_BOOL_FIELDS = ("paused", "dry_run")
 
 
 @dataclass
 class Config:
     watch_folder: str = ""
+    # Dossier dont les fichiers déjà présents ont été ignorés : différent de watch_folder, le
+    # prochain cycle fait cet état des lieux au lieu de publier.
+    baseline_folder: str = ""
     interval_minutes: int = 15
     paused: bool = False
     dry_run: bool = False
