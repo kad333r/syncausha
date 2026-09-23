@@ -45,7 +45,7 @@ QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus { border:
 QListWidget#rules { background: $surface; border: 1px solid $border; border-radius: 8px; outline: 0; padding: 4px; }
 QListWidget#rules::item { padding: 6px; border-radius: 6px; }
 QListWidget#rules::item:selected { background: $hover; color: $text; }
-QLabel#imagePreview { background: $hover; border-radius: 8px; color: $muted; }
+QFrame#card QLabel#imagePreview { background: $hover; border-radius: 8px; color: $muted; }
 QLabel[pill="success"] { background: $success_bg; color: $success; border-radius: 6px; padding: 2px 8px; }
 QLabel[pill="warning"] { background: $warning_bg; color: $warning; border-radius: 6px; padding: 2px 8px; }
 QLabel[pill="danger"] { background: $danger_bg; color: $danger; border-radius: 6px; padding: 2px 8px; }

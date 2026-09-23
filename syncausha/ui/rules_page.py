@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -27,10 +27,12 @@ from PySide6.QtWidgets import (
 from syncausha.config import Rule
 from syncausha.rules import validate_image
 from syncausha.ui.controller import AppController, Catalog
+from syncausha.ui.style import palette
 from syncausha.ui.widgets import make_label
 
 NO_PLAYLIST = "Aucune playlist"
 PREVIEW_SIZE = 110
+THUMBNAIL_SIZE = 36
 
 
 class ReorderableList(QListWidget):
@@ -72,7 +74,7 @@ class RulesPage(QWidget):
 
         self.list = ReorderableList()
         self.list.setObjectName("rules")
-        self.list.setIconSize(QSize(36, 36))
+        self.list.setIconSize(QSize(THUMBNAIL_SIZE, THUMBNAIL_SIZE))
         self.list.currentRowChanged.connect(self._on_row_changed)
         self.list.reordered.connect(self._on_reordered)
         layout.addWidget(self.list, 1)
@@ -277,10 +279,23 @@ class RulesPage(QWidget):
 
 
 def _thumbnail(path: str) -> QIcon:
-    pixmap = QPixmap(path) if path else QPixmap()
-    if pixmap.isNull():
-        return QIcon()
-    return QIcon(pixmap.scaled(72, 72, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
+    """Carré arrondi : l'image recadrée, ou une case neutre qui garde les textes alignés."""
+    size = THUMBNAIL_SIZE * 2  # nette sur les écrans haute densité
+    image = QPixmap(path) if path else QPixmap()
+    if image.isNull():
+        brush = QBrush(QColor(palette()["hover"]))
+    else:
+        image = image.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+        brush = QBrush(image.copy((image.width() - size) // 2, (image.height() - size) // 2, size, size))
+    thumbnail = QPixmap(size, size)
+    thumbnail.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(thumbnail)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(brush)
+    painter.drawRoundedRect(thumbnail.rect(), 12, 12)
+    painter.end()
+    return QIcon(thumbnail)
 
 
 def _set_combo_items(combo: QComboBox, items: list[tuple[str, object]], selected: object) -> None:
