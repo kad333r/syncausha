@@ -88,6 +88,13 @@ def test_forget_unresolved_keeps_created_and_published(journal):
     assert journal.get("present") is not None
 
 
+def test_forget_unresolved_never_forgets_an_upload_in_progress(journal):
+    journal.ensure("h1", "gone.mp3", 1)
+    journal.update("h1", step=Step.UPLOADING, status=Status.EN_ATTENTE)
+    journal.forget_unresolved(keep=set(), present_filenames=set())
+    assert journal.get("h1") is not None
+
+
 def test_forget_unresolved_keeps_entries_matching_present_filename(journal):
     journal.ensure("h1", "still_on_disk.mp3", 1)
     journal.update("h1", status=Status.ECHEC)

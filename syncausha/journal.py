@@ -28,6 +28,7 @@ class Status(StrEnum):
 
 class Step(StrEnum):
     NONE = "none"
+    UPLOADING = "uploading"  # création envoyée : l'épisode existe peut-être déjà sur Ausha
     CREATED = "created"
     IMAGE_DONE = "image_done"
     PLAYLIST_DONE = "playlist_done"
@@ -153,10 +154,11 @@ class Journal:
     def forget_unresolved(self, keep: set[str], present_filenames: set[str] = frozenset()) -> None:
         """Oublie les fichiers disparus du dossier qui n'ont jamais donné d'épisode.
 
-        Seules les entrées à l'étape « none » et dont le statut n'est ni publié ni déjà présent
-        sont concernées, et seulement si leur hash n'est pas dans keep ET que leur nom de fichier
-        n'est pas dans present_filenames (un fichier retrouvé sous le même nom, même modifié,
-        n'est donc pas oublié à tort).
+        Seules les entrées à l'étape « none » (jamais « uploading », dont l'épisode existe
+        peut-être) et dont le statut n'est ni publié ni déjà présent sont concernées, et
+        seulement si leur hash n'est pas dans keep ET que leur nom de fichier n'est pas dans
+        present_filenames (un fichier retrouvé sous le même nom, même modifié, n'est donc
+        pas oublié à tort).
         """
         with self._lock, self._db:
             rows = self._db.execute(
