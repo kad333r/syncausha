@@ -5,6 +5,7 @@ import sys
 import uuid
 
 import pytest
+from PySide6.QtCore import QCoreApplication, QTranslator
 
 from syncausha import app as app_module
 from syncausha.ui import single_instance
@@ -17,6 +18,16 @@ def test_forget_token_removes_the_token_without_starting_the_app(monkeypatch):
     monkeypatch.setattr(app_module, "QApplication", lambda *args: pytest.fail("aucune interface attendue"))
     assert app_module.main(["SyncAusha.exe", "--forget-token"]) == 0
     assert removed == [""]
+
+
+def test_standard_dialog_buttons_are_in_french(qapp):
+    app_module._install_qt_translation(qapp)
+    (translator,) = qapp.findChildren(QTranslator)
+    try:
+        assert QCoreApplication.translate("QPlatformTheme", "&Yes") == "&Oui"
+    finally:
+        qapp.removeTranslator(translator)
+        translator.deleteLater()
 
 
 @pytest.fixture
