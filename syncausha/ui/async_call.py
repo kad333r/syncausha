@@ -4,37 +4,50 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
-
-_pending: set[_Task] = set()
+from PySide6.QtCore import QCoreApplication, QObject, QThreadPool, Signal, Slot
 
 
 class _Signals(QObject):
+    """Créé dans le thread UI, qui exécute donc ses slots et les rappels.
+
+    Possédé par l'application et non par Python : le thread de travail peut lâcher sa
+    référence sans le détruire ; seul deleteLater() le détruit, dans le thread UI.
+    """
+
     done = Signal(object)
     failed = Signal(object)
 
+    def __init__(self, on_done: Callable[[Any], None], on_failed: Callable[[Exception], None]) -> None:
+        super().__init__(QCoreApplication.instance())
+        self._on_done, self._on_failed = on_done, on_failed
+        self.done.connect(self._finish_done)
+        self.failed.connect(self._finish_failed)
 
-class _Task(QRunnable):
-    def __init__(self, fn: Callable[[], Any]) -> None:
-        super().__init__()
-        self.setAutoDelete(False)
-        self.fn = fn
-        self.signals = _Signals()  # créé dans le thread UI → slots appelés dans le thread UI
+    @Slot(object)
+    def _finish_done(self, result: Any) -> None:
+        self._finish(self._on_done, result)
 
-    def run(self) -> None:
+    @Slot(object)
+    def _finish_failed(self, error: Exception) -> None:
+        self._finish(self._on_failed, error)
+
+    def _finish(self, callback: Callable[[Any], None], value: Any) -> None:
         try:
-            result = self.fn()
-        except Exception as exc:
-            self.signals.failed.emit(exc)
-            return
-        self.signals.done.emit(result)
+            callback(value)
+        finally:
+            self.deleteLater()
 
 
 def run_async(fn: Callable[[], Any], on_done: Callable[[Any], None], on_failed: Callable[[Exception], None]) -> None:
-    task = _Task(fn)
-    _pending.add(task)
-    task.signals.done.connect(on_done)
-    task.signals.failed.connect(on_failed)
-    task.signals.done.connect(lambda _result: _pending.discard(task))
-    task.signals.failed.connect(lambda _error: _pending.discard(task))
-    QThreadPool.globalInstance().start(task)
+    signals = _Signals(on_done, on_failed)
+
+    def run() -> None:
+        try:
+            result = fn()
+        except Exception as exc:
+            signals.failed.emit(exc)
+            return
+        signals.done.emit(result)
+
+    # Qt enveloppe la fonction dans un QRunnable supprimé après exécution.
+    QThreadPool.globalInstance().start(run)

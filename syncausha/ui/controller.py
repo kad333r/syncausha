@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
-from syncausha.ausha_client import AushaClient, AuthError, Playlist, Show
+from syncausha.ausha_client import AushaClient, AuthError, Playlist, RejectedError, Show
 from syncausha.config import Config, get_token, load_config, save_config, set_token
 from syncausha.journal import Journal
 from syncausha.sync_engine import CycleResult, Event, SyncEngine
@@ -118,7 +118,8 @@ class AppController(QObject):
         self.sync_now()
 
     def _on_timer(self) -> None:
-        if not self.auth_blocked:
+        # Un passage du minuteur pendant un cycle est simplement ignoré.
+        if not self.auth_blocked and not self.busy:
             self.sync_now()
 
     def _restart_timer(self) -> None:
@@ -149,7 +150,10 @@ class AppController(QObject):
             title, body = STATE_NOTIFICATIONS[result.state]
             self.notification.emit(title, body.format(message=result.message))
         self._last_result_state = result.state
-        self._set_state(result.state, result.message)
+        if self.config.paused:  # mis en pause pendant le cycle
+            self._set_state("paused", "")
+        else:
+            self._set_state(result.state, result.message)
         self.activity_changed.emit()
         if self._rerun_requested:
             self.sync_now()
@@ -165,10 +169,14 @@ class AppController(QObject):
 
     def update_config(self, config: Config) -> None:
         """Enregistre et applique de nouveaux réglages. Ne jamais muter self.config en place."""
+        previous = self.config
         save_config(config, self.config_path)
         self.config = config
         self.engine.config = config
-        self._restart_timer()
+        if config.interval_minutes != previous.interval_minutes:
+            self._restart_timer()
+        if config.watch_folder != previous.watch_folder:
+            self._last_result_state = ""  # un dossier toujours introuvable sera de nouveau signalé
         if config.paused:
             self._set_state("paused", "")
         self.activity_changed.emit()
@@ -176,6 +184,7 @@ class AppController(QObject):
     def update_token(self, token: str) -> None:
         set_token(token)
         self.auth_blocked = False
+        self._last_result_state = ""  # un jeton toujours invalide sera de nouveau signalé
 
     def set_paused(self, paused: bool) -> None:
         self.update_config(replace(self.config, paused=paused))
@@ -198,7 +207,7 @@ class AppController(QObject):
             if not token:
                 raise AuthError("Aucun jeton Ausha enregistré.")
             with AushaClient(token, base_url) as client:
-                return {show: client.list_playlists(show.id) for show in client.list_shows()}
+                return {show: _playlists(client, show) for show in client.list_shows()}
 
         run_async(load, on_done, on_failed)
 
@@ -211,3 +220,12 @@ class AppController(QObject):
         self._timer.stop()
         self._thread.quit()
         return self._thread.wait(15000)
+
+
+def _playlists(client: AushaClient, show: Show) -> list[Playlist]:
+    """Playlists de l'émission ; une émission dont Ausha les refuse reste proposée, sans playlist."""
+    try:
+        return client.list_playlists(show.id)
+    except RejectedError as exc:
+        log.warning("Playlists de l'émission %s refusées par Ausha : %s", show.id, exc)
+        return []
