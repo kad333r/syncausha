@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import logging
 import threading
+import time
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,6 +28,10 @@ log = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
 STOP_MESSAGE = "Arrêt demandé"
+# Délai avant de recréer un épisode dont la création est restée sans réponse : la recherche
+# d'Ausha peut mettre du temps à voir un épisode tout juste créé.
+RECREATE_AFTER_SECONDS = 15 * 60
+CHECKING_MESSAGE = "Envoi précédent en cours de vérification sur Ausha"
 
 
 @dataclass(frozen=True)
@@ -55,12 +60,14 @@ class SyncEngine:
         client_factory: Callable[[Config, threading.Event], AushaClient | None],
         on_event: Callable[[Event], None] = lambda event: None,
         scan: Callable[[Path], list[ReadyFile]] = scan_ready_files,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self.config = config
         self.journal = journal
         self._client_factory = client_factory
         self._on_event = on_event
         self._scan = scan
+        self._clock = clock
         self.cancel_event = threading.Event()
 
     def cancel(self) -> None:
@@ -192,6 +199,7 @@ class SyncEngine:
             detail = "Déjà présent sur Ausha — ne serait pas publié"
         else:
             detail = f"Serait publié dans {rule.show_name or rule.show_id}"
+        self.journal.update(entry.hash, attempts=0, last_error="")
         self._emit(Event("dry_run", title, detail))
 
     def _publish(self, client: AushaClient, rule: Rule, ready: ReadyFile, entry: Entry, title: str) -> None:
@@ -206,8 +214,15 @@ class SyncEngine:
                 # La réponse à la création s'était perdue : l'épisode existe, on le reprend.
                 log.info("Épisode « %s » retrouvé sur Ausha (id %s)", title, existing.id)
                 episode_id = existing.id
+            elif step is Step.UPLOADING and self._clock() - entry.updated_at < RECREATE_AFTER_SECONDS:
+                # Pas encore visible : on patiente sans compter d'essai, en gardant la date de
+                # l'envoi (updated_at) pour que l'attente ne reparte pas de zéro à chaque cycle.
+                self.journal.update(
+                    file_hash, status=Status.EN_ATTENTE, last_error=CHECKING_MESSAGE, updated_at=entry.updated_at
+                )
+                return
             else:
-                episode_id = self._create(client, rule, ready, file_hash, title)
+                episode_id = self._create(client, rule, ready, entry, title)
             self.journal.update(file_hash, episode_id=episode_id, step=Step.CREATED, attempts=0)
             step = Step.CREATED
         if step is Step.CREATED:
@@ -222,9 +237,10 @@ class SyncEngine:
         self.journal.update(file_hash, status=Status.PUBLIE, attempts=0, last_error="")
         self._emit(Event("published", title, rule.show_name))
 
-    def _create(self, client: AushaClient, rule: Rule, ready: ReadyFile, file_hash: str, title: str) -> int:
+    def _create(self, client: AushaClient, rule: Rule, ready: ReadyFile, entry: Entry, title: str) -> int:
         """Envoie l'épisode. L'étape « uploading » est notée avant : si la réponse se perd,
         le cycle suivant cherche l'épisode sur Ausha au lieu de le recréer."""
+        file_hash = entry.hash
         self.journal.update(file_hash, step=Step.UPLOADING)
         try:
             return client.create_episode(
@@ -235,7 +251,10 @@ class SyncEngine:
                 on_progress=lambda percent: self._emit(Event("progress", title, percent=percent)),
             )
         except RejectedError:
-            self.journal.update(file_hash, step=Step.NONE)  # refusé : rien n'a été créé
+            # Refusé : rien n'a été créé par cet appel. Après une réponse perdue, l'épisode
+            # d'un envoi précédent existe peut-être encore : on garde alors « uploading ».
+            if entry.step is Step.NONE:
+                self.journal.update(file_hash, step=Step.NONE)
             raise
 
     @staticmethod

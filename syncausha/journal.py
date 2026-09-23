@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS hash_cache (
 """
 _COLUMNS = "hash, filename, size, show_id, show_name, episode_id, step, status, attempts, last_error, updated_at"
 _UPDATABLE = frozenset(
-    {"filename", "size", "show_id", "show_name", "episode_id", "step", "status", "attempts", "last_error"}
+    {"filename", "size", "show_id", "show_name", "episode_id", "step", "status", "attempts", "last_error", "updated_at"}
 )
 
 
@@ -133,10 +133,11 @@ class Journal:
         return self.get(file_hash)
 
     def update(self, file_hash: str, **values) -> None:
+        """Met à jour les champs donnés ; updated_at vaut maintenant, sauf s'il est fourni."""
         unknown = set(values) - _UPDATABLE
         if unknown:
             raise ValueError(f"Champs inconnus : {sorted(unknown)}")
-        values["updated_at"] = self._clock()
+        values.setdefault("updated_at", self._clock())
         assignments = ", ".join(f"{name} = ?" for name in values)
         params = tuple(str(v) if isinstance(v, StrEnum) else v for v in values.values())
         with self._lock, self._db:

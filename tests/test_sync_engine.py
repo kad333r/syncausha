@@ -9,7 +9,7 @@ from syncausha.ausha_client import AuthError, Cancelled, Episode, Playlist, Reje
 from syncausha.config import Config, Rule
 from syncausha.journal import Journal, Status, Step
 from syncausha.scanner import scan_ready_files
-from syncausha.sync_engine import SyncEngine, _same_title
+from syncausha.sync_engine import RECREATE_AFTER_SECONDS, SyncEngine, _same_title
 
 
 class FakeClient:
@@ -89,7 +89,8 @@ def env(tmp_path):
         description_template="Nouvel épisode",
     )
     config = Config(watch_folder=str(folder), rules=[rule])
-    journal = Journal(tmp_path / "journal.db")
+    clock = SimpleNamespace(now=1_000_000.0)  # horloge commune au journal et au moteur
+    journal = Journal(tmp_path / "journal.db", clock=lambda: clock.now)
     client = FakeClient()
     events = []
 
@@ -100,10 +101,11 @@ def env(tmp_path):
             lambda cfg, cancel: client,
             on_event=on_event,
             scan=lambda path: scan_ready_files(path, min_age_seconds=0),
+            clock=lambda: clock.now,
         )
 
     yield SimpleNamespace(
-        folder=folder, config=config, journal=journal, client=client, events=events,
+        folder=folder, config=config, journal=journal, client=client, events=events, clock=clock,
         engine=make_engine(), make_engine=make_engine,
     )
     journal.close()
@@ -216,6 +218,7 @@ def test_three_transient_failures_mark_file_as_failed(env):
     add_file(env, "MARS ATTACK 13.mp3")
     for _ in range(4):
         env.engine.run_cycle()
+        env.clock.now += RECREATE_AFTER_SECONDS  # une création sans réponse n'est retentée qu'après ce délai
     entry = only_entry(env)
     assert entry.status is Status.ECHEC
     assert entry.attempts == 3
@@ -228,7 +231,9 @@ def test_retry_after_failure_publishes(env):
     add_file(env, "MARS ATTACK 13.mp3")
     for _ in range(3):
         env.engine.run_cycle()
+        env.clock.now += RECREATE_AFTER_SECONDS
     env.journal.reset_for_retry(only_entry(env).hash)
+    env.clock.now += RECREATE_AFTER_SECONDS
     env.engine.run_cycle()
     assert only_entry(env).status is Status.PUBLIE
 
@@ -327,6 +332,16 @@ def test_dry_run_read_failure_counts_as_attempt(env):
     assert env.events == []
 
 
+def test_successful_dry_run_check_clears_the_previous_failure(env):
+    env.config.dry_run = True
+    env.client.fail["find_episodes"] = [TransientError("pas de réseau")]
+    add_file(env, "MARS ATTACK 13.mp3")
+    env.engine.run_cycle()
+    env.engine.run_cycle()
+    entry = only_entry(env)
+    assert (entry.status, entry.attempts, entry.last_error) == (Status.EN_ATTENTE, 0, "")
+
+
 def test_paused_and_unconfigured_states(env, tmp_path):
     env.config.paused = True
     assert env.engine.run_cycle().state == "paused"
@@ -379,6 +394,36 @@ def test_lost_create_response_adopts_the_episode_next_cycle(env):
     assert entry.episode_id == 101
 
 
+def test_lost_create_response_is_not_recreated_while_ausha_search_lags(env):
+    env.client.fail_after["create_episode"] = [TransientError("délai dépassé")]
+    add_file(env, "MARS ATTACK 13.mp3")
+    env.engine.run_cycle()
+    env.client.episodes[1] = []  # la recherche d'Ausha ne voit pas encore l'épisode créé
+    for minutes in (5, 9):
+        env.clock.now += minutes * 60
+        assert env.engine.run_cycle().state == "ok"
+    entry = only_entry(env)
+    assert [c[0] for c in env.client.calls] == ["create"]
+    assert (entry.status, entry.step, entry.attempts) == (Status.EN_ATTENTE, Step.UPLOADING, 1)
+    assert entry.last_error == "Envoi précédent en cours de vérification sur Ausha"
+    env.clock.now += 60  # 15 min après l'échec de la création
+    env.engine.run_cycle()
+    assert [c[0] for c in env.client.calls] == ["create", "create", "image", "playlist"]
+    assert only_entry(env).status is Status.PUBLIE
+
+
+def test_rejected_create_after_lost_response_keeps_the_uploading_step(env):
+    env.client.fail_after["create_episode"] = [TransientError("délai dépassé")]
+    add_file(env, "MARS ATTACK 13.mp3")
+    env.engine.run_cycle()
+    env.client.episodes[1] = []
+    env.client.fail["create_episode"] = [RejectedError("Titre déjà utilisé")]
+    env.clock.now += RECREATE_AFTER_SECONDS
+    env.engine.run_cycle()
+    entry = only_entry(env)
+    assert (entry.status, entry.step) == (Status.REJETE, Step.UPLOADING)
+
+
 def test_find_failure_while_resuming_upload_is_retried(env):
     env.client.fail_after["create_episode"] = [TransientError("délai dépassé")]
     add_file(env, "MARS ATTACK 13.mp3")
@@ -421,6 +466,7 @@ def test_attempts_reset_after_each_successful_step(env):
     add_file(env, "MARS ATTACK 13.mp3")
     for _ in range(3):
         env.engine.run_cycle()
+        env.clock.now += RECREATE_AFTER_SECONDS
     entry = only_entry(env)
     assert (entry.status, entry.step, entry.attempts) == (Status.EN_ATTENTE, Step.IMAGE_DONE, 1)
     env.engine.run_cycle()
