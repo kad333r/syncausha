@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -88,9 +89,9 @@ class AppController(QObject):
         self._restart_timer()
 
     @staticmethod
-    def _make_client(config: Config) -> AushaClient | None:
+    def _make_client(config: Config, cancel_event: threading.Event) -> AushaClient | None:
         token = get_token()
-        return AushaClient(token, config.api_base_url) if token else None
+        return AushaClient(token, config.api_base_url, cancel=cancel_event) if token else None
 
     # --- Synchro -------------------------------------------------------------
 
@@ -202,6 +203,8 @@ class AppController(QObject):
         run_async(load, on_done, on_failed)
 
     def shutdown(self) -> None:
+        """Interrompt l'envoi en cours (reprise au prochain lancement) puis arrête le thread."""
+        self.engine.cancel()
         self._timer.stop()
         self._thread.quit()
-        self._thread.wait(5000)
+        self._thread.wait(15000)
