@@ -6,7 +6,7 @@ Automatically publishes to [Ausha](https://www.ausha.co) the podcasts you drop i
 
 ## Install
 
-1. Run `SyncAusha-Setup.exe`. If Windows shows "Windows protected your PC", click **More info → Run anyway** (the executable isn't signed). Then choose your language (English is preselected).
+1. Download `SyncAusha-Setup.exe` from the [latest release](https://github.com/kad333r/syncausha/releases/latest) and run it. If Windows shows "Windows protected your PC", click **More info → Run anyway** (the executable isn't signed). Then choose your language (English is preselected).
 2. Keep **Start SyncAusha when Windows starts** checked.
 3. On first launch, the window opens on **Settings**:
    - paste your Ausha token (Ausha → My account → Public API; PRO or Supersonic plan required), then click **Test connection**;

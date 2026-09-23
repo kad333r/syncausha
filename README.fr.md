@@ -6,7 +6,7 @@ Publie automatiquement sur [Ausha](https://www.ausha.co) les podcasts déposés 
 
 ## Installer
 
-1. Lancez `SyncAusha-Setup.exe`. Si Windows affiche « Windows a protégé votre PC », cliquez sur **Informations complémentaires → Exécuter quand même** (l'exécutable n'est pas signé). Choisissez ensuite la langue (anglais présélectionné).
+1. Téléchargez `SyncAusha-Setup.exe` depuis la [dernière version](https://github.com/kad333r/syncausha/releases/latest) et lancez-le. Si Windows affiche « Windows a protégé votre PC », cliquez sur **Informations complémentaires → Exécuter quand même** (l'exécutable n'est pas signé). Choisissez ensuite la langue (anglais présélectionné).
 2. Gardez cochée **Lancer SyncAusha au démarrage de Windows**.
 3. Au premier lancement, la fenêtre s'ouvre sur **Réglages** :
    - collez votre jeton Ausha (Ausha → Mon compte → API publique ; offre PRO ou Supersonic requise) puis **Tester la connexion** ;
