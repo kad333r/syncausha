@@ -105,12 +105,16 @@ class SettingsPage(QWidget):
         self.interval.setValue(config.interval_minutes)
         self.autostart.setChecked(autostart.is_enabled())
         self.paused.setChecked(config.paused)
+        self._saved_paused = config.paused
         self.dry_run.setChecked(config.dry_run)
         self.saved_label.clear()
 
     def _follow_pause(self, _state: str, _message: str) -> None:
         """Pause changée ailleurs (icône) : seule cette case suit, les autres saisies sont gardées."""
-        self.paused.setChecked(self.controller.config.paused)
+        paused = self.controller.config.paused
+        if paused != self._saved_paused:  # un simple début ou fin de cycle ne touche pas la case
+            self._saved_paused = paused
+            self.paused.setChecked(paused)
 
     def _choose_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Dossier des podcasts", self.folder.text())

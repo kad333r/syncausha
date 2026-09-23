@@ -35,8 +35,8 @@ class Step(StrEnum):
     PLAYLIST_DONE = "playlist_done"
 
 
-# Statuts qu'un cycle ne retraite pas (seuls « Réessayer » relance REJETE et ECHEC, et
-# « Publier quand même » IGNORE).
+# Statuts qu'un cycle ne retraite pas : seuls « Réessayer » (REJETE, ECHEC) et
+# « Publier quand même » (IGNORE) les remettent en attente.
 FINAL_STATUSES = frozenset({Status.PUBLIE, Status.DEJA_PRESENT, Status.REJETE, Status.ECHEC, Status.IGNORE})
 ATTENTION_STATUSES = (Status.SANS_REGLE, Status.REGLE_CASSEE, Status.REJETE, Status.ECHEC)
 _NOT_RECENT = (*ATTENTION_STATUSES, Status.IGNORE)
@@ -168,10 +168,9 @@ class Journal:
 
         Seules les entrées à l'étape « none » (jamais « uploading », dont l'épisode existe
         peut-être) et dont le statut n'est ni publié ni déjà présent (ignorées comprises)
-        sont concernées, et
-        seulement si leur hash n'est pas dans keep ET que leur nom de fichier n'est pas dans
-        present_filenames (un fichier retrouvé sous le même nom, même modifié, n'est donc
-        pas oublié à tort).
+        sont concernées, et seulement si leur hash n'est pas dans keep ET que leur nom de
+        fichier n'est pas dans present_filenames (un fichier retrouvé sous le même nom, même
+        modifié, n'est donc pas oublié à tort).
         """
         with self._lock, self._db:
             rows = self._db.execute(

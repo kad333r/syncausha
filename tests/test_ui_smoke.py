@@ -123,6 +123,9 @@ def test_pause_checkbox_and_tray_follow_the_controller(controller, syncs):
     assert not page.paused.isChecked()
     assert tray.pause_action.text() == "Mettre en pause"
     assert page.interval.value() == 40
+    page.paused.setChecked(True)  # case cochée, pas encore enregistrée
+    controller.state_changed.emit("syncing", "")  # début d'un cycle : la case n'est pas touchée
+    assert page.paused.isChecked()
 
 
 def test_settings_page_reports_settings_that_cannot_be_saved(controller, syncs, monkeypatch):
