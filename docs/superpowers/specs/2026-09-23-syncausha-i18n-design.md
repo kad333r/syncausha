@@ -12,7 +12,8 @@ Proposer SyncAusha en **français**, **anglais** et **arabe** : l'application (f
 
 | Sujet | Décision |
 |---|---|
-| Choix de la langue | Dans l'installateur (Français / English / العربية), modifiable ensuite dans Réglages |
+| Choix de la langue | Dans l'installateur (English / Français / العربية), modifiable ensuite dans Réglages |
+| Langue par défaut | **Anglais** : présélectionné dans l'installateur et utilisé si aucun choix n'existe |
 | Changement dans Réglages | Appliqué immédiatement (fenêtre reconstruite), sans redémarrage |
 | Mécanisme | Catalogue Python (`tr(clé, **variables)`), pas de Qt Linguist ni gettext |
 | Arabe | Interface entière de droite à gauche ; chiffres occidentaux (0-9) |
@@ -25,8 +26,7 @@ Codes : `fr`, `en`, `ar`. Au démarrage, la langue active est la première dispo
 
 1. `config.language` (`config.json`, choix fait dans Réglages ; chaîne vide = non défini) ;
 2. la valeur `Language` de `HKCU\Software\SyncAusha` écrite par l'installateur ;
-3. la langue de Windows (`QLocale.system().language()` : arabe → `ar`, français → `fr`) ;
-4. `en`.
+3. `en` (langue par défaut ; la langue de Windows n'est pas utilisée).
 
 Une valeur inconnue à une étape est ignorée (on passe à la suivante).
 
@@ -38,7 +38,7 @@ Une valeur inconnue à une étape est ignorée (on passe à la suivante).
 - `LANGUAGES = {"fr": "Français", "en": "English", "ar": "العربية"}` (nom affiché dans sa propre langue).
 - `set_language(code)`, `current_language()`, `is_rtl()` (vrai pour `ar`).
 - `tr(key, **params)` : texte de la langue active, repli sur l'anglais puis sur la clé si absente ; les variables manquantes ne font pas planter (texte renvoyé sans substitution, avertissement dans le log).
-- `resolve_language(config_language, registry_reader, system_language)` : applique l'ordre du §3 ; fonctions d'accès au registre et à la langue système injectables pour les tests.
+- `resolve_language(config_language, registry_reader)` : applique l'ordre du §3 ; la lecture du registre est injectable pour les tests.
 - `Message` : `(key, params)` sérialisable en JSON (`{"k": …, "p": {…}}`) ; `render(text)` traduit un `last_error` du journal : JSON → `tr`, sinon texte affiché tel quel (anciennes lignes, messages bruts).
 
 **Moteur et modules non-UI** (`sync_engine`, `rules`, `ausha_client`, `config`) — les messages destinés à l'utilisateur deviennent des `Message` (clé + variables) au lieu de phrases françaises. Les messages renvoyés par Ausha (souvent en anglais) passent tels quels dans une variable (`{detail}`). Les messages de log restent en français (usage support).
@@ -54,15 +54,15 @@ Une valeur inconnue à une étape est ignorée (on passe à la suivante).
 **Réglages** — nouveau champ « Langue » (liste Français / English / العربية) ; enregistrer applique le changement et le sauve dans `config.language`.
 
 **Installateur** (`installer/syncausha.iss`)
-- `[Languages]` : `french` (`French.isl`), `english` (`Default.isl`), `arabic` (`Arabic.isl`) ; la boîte de choix de langue s'affiche au lancement.
+- `[Languages]` : `english` (`Default.isl`, en premier), `french` (`French.isl`), `arabic` (`Arabic.isl`) ; la boîte de choix de langue s'affiche au lancement avec l'anglais présélectionné (`LanguageDetectionMethod=none`, `ShowLanguageDialog=yes`).
 - `[CustomMessages]` traduits pour les textes propres à SyncAusha (tâches, question de désinstallation, lancement final).
 - `[Registry]` : `HKCU\Software\SyncAusha`, valeur `Language` = `fr` / `en` / `ar` selon la langue choisie (`Languages:`), clé supprimée à la désinstallation (`uninsdeletekey`).
 - Le fichier reste en UTF-8 avec BOM.
 
 ## 5. Documentation
 
-- `README.md` en anglais (public GitHub), avec liens vers `README.fr.md` et `README.ar.md` (même contenu).
-- Notes de la release en trois langues.
+- `README.md` en **anglais** (version de référence, public GitHub), avec liens vers `README.fr.md` et `README.ar.md` (même contenu).
+- Notes de la release : anglais d'abord, puis français et arabe.
 - `docs/verification-manuelle.md` : section « Langues » (choix à l'installation, changement dans Réglages, arabe de droite à gauche, désinstallation supprime la clé).
 
 ## 6. Tests
