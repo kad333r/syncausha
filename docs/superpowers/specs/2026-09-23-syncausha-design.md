@@ -49,7 +49,7 @@ Référence : https://developers.ausha.co/docs/1.0/overview
 
 ## 4. Architecture
 
-Une seule application Python, un seul processus, une seule instance (un second lancement ramène la fenêtre existante au premier plan).
+Une seule application Python, un seul processus, une seule instance (un second lancement ramène la fenêtre existante au premier plan). L'unicité repose sur un fichier verrou `%APPDATA%\SyncAusha\syncausha.lock` (`QLockFile`, qui reconnaît le verrou laissé par un processus arrêté brutalement) : sous Windows, `QLocalServer.listen` réussit même si le nom est déjà pris, le serveur local ne sert donc qu'à transmettre la demande « afficher la fenêtre ».
 
 ```
 syncausha/
@@ -83,7 +83,7 @@ build.ps1           PyInstaller + Inno Setup → SyncAusha-Setup.exe
 **`ausha_client`**
 - Client `httpx` synchrone, une méthode par endpoint du §3.
 - Envois multipart en streaming (pas de chargement du fichier en mémoire).
-- Erreurs typées : `AuthError` (401/403), `RejectedError` (422, avec message Ausha), `RateLimited` (429, géré en interne par attente), `TransientError` (réseau, délai, 5xx).
+- Erreurs typées : `AuthError` (401 ; 403 seulement sur la liste des émissions), `RejectedError` (422 et autres 4xx, dont un 403 ailleurs, avec message Ausha), `TransientError` (réseau, délai, 5xx, 429 persistant), `Cancelled` (arrêt de l'application, vérifié avant chaque requête). Le 429 est géré en interne par attente.
 
 **`scanner`**
 - Premier niveau du dossier uniquement.
@@ -98,13 +98,13 @@ build.ps1           PyInstaller + Inno Setup → SyncAusha-Setup.exe
 **`journal`** — `%APPDATA%\SyncAusha\journal.db` (SQLite)
 - Table `files` : `hash` (SHA-256 du contenu, clé), `filename`, `size`, `show_id`, `episode_id`, `step`, `status`, `attempts`, `last_error`, `updated_at`.
 - Table `hash_cache` : `path`, `size`, `mtime`, `hash` — évite de relire un fichier inchangé.
-- `step` : `none` → `created` → `image_done` → `playlist_done`.
-- `status` : `sans_regle`, `regle_cassee`, `en_cours`, `publie`, `deja_present`, `rejete`, `echec`.
+- `step` : `none` → `uploading` → `created` → `image_done` → `playlist_done`. `uploading` est noté juste avant l'envoi de la création : si la réponse se perd, l'épisode existe peut-être déjà sur Ausha (voir §5).
+- `status` : `en_attente`, `sans_regle`, `regle_cassee`, `en_cours`, `publie`, `deja_present`, `rejete`, `echec`.
 - L'identité par empreinte fait qu'un fichier renommé ou déplacé dans le dossier n'est pas renvoyé.
 
 **`sync_engine`**
 - Tourne dans un thread de travail ; l'UI reçoit les événements via des signaux Qt.
-- Minuteur `interval_minutes` + déclenchement manuel. Un cycle déjà en cours fait ignorer le déclenchement suivant.
+- Minuteur `interval_minutes` + déclenchement manuel. Un passage du minuteur pendant un cycle est ignoré ; une demande explicite (Synchroniser, Réessayer, enregistrement des réglages, reprise après pause) relance un cycle dès la fin du cycle en cours.
 - En pause : aucun cycle. En essai à blanc : tout le cycle s'exécute sauf les appels d'écriture (création, image, playlist) ; l'Activité affiche « serait publié dans … ».
 
 **`autostart`**
@@ -114,17 +114,18 @@ build.ps1           PyInstaller + Inno Setup → SyncAusha-Setup.exe
 ## 5. Déroulé d'un cycle
 
 1. Si pause ou jeton absent → fin.
-2. Charger les émissions et playlists Ausha (pour valider les règles). En cas d'`AuthError` → état « jeton invalide », fin.
-3. Scanner le dossier → fichiers prêts.
-4. Pour chaque fichier :
+2. Scanner le dossier → fichiers prêts.
+3. Pour chaque fichier :
    1. Calculer (ou lire en cache) l'empreinte. Statut `publie`, `deja_present` ou `rejete` dans le journal → ignorer. Statut `echec` → ignorer jusqu'à « Réessayer ».
-   2. Chercher la règle. Aucune → `sans_regle` (notification une seule fois par fichier). Règle invalide → `regle_cassee` + notification.
-   3. Si `step = none` : chercher dans l'émission un épisode dont le nom est égal au titre (insensible à la casse). Trouvé → `deja_present`, passer au fichier suivant.
-   4. `status = en_cours`. Si `step = none` : créer l'épisode (audio, titre, description, `state=active`) ; enregistrer aussitôt `episode_id` et `step = created`.
-   5. Si `step = created` et image dans la règle : envoyer l'image ; `step = image_done`.
-   6. Si playlist dans la règle : ajouter l'épisode ; `step = playlist_done`.
-   7. `status = publie`, notification « Publié : <titre> ».
-5. Mettre à jour l'état global (icône, page Activité).
+   2. Au premier fichier qui a du travail, charger une fois pour le cycle les émissions et playlists Ausha (pour valider les règles). En cas d'`AuthError` → état « jeton invalide », fin. Une émission dont Ausha refuse les playlists est laissée de côté : ses règles deviennent « à corriger ». Sans fichier à traiter, aucun appel à Ausha : un jeton révoqué n'est donc détecté qu'au prochain fichier à traiter, ou avec « Tester la connexion ».
+   3. Chercher la règle. Aucune → `sans_regle` (notification une seule fois par fichier). Règle invalide → `regle_cassee` + notification.
+   4. Si `step = none` : chercher dans l'émission un épisode dont le nom est égal au titre (insensible à la casse, aux entités HTML et aux espaces). Trouvé → `deja_present`, passer au fichier suivant.
+   5. Si `step = uploading` (réponse à une création perdue) : chercher l'épisode du même titre. Trouvé → il est adopté (`episode_id`, `step = created`). Pas trouvé → il n'est recréé que si la dernière écriture de l'entrée date de plus de 15 min ; sinon le fichier reste `en_attente` (« Envoi précédent en cours de vérification sur Ausha »), sans compter d'essai et sans rajeunir cette date, car la recherche d'Ausha peut tarder à voir un épisode tout juste créé.
+   6. `status = en_cours`. Si l'épisode reste à créer : noter `step = uploading`, créer l'épisode (audio, titre, description, `state=active`) ; enregistrer aussitôt `episode_id` et `step = created`. Un refus d'Ausha ne remet `step = none` que si l'étape était `none` avant l'envoi.
+   7. Si `step = created` et image dans la règle : envoyer l'image ; `step = image_done`.
+   8. Si playlist dans la règle : ajouter l'épisode ; `step = playlist_done`.
+   9. `status = publie`, notification « Publié : <titre> ».
+4. Mettre à jour l'état global (icône, page Activité).
 
 Titre : nom du fichier sans extension, espaces en trop retirés, tronqué à 140 caractères. Description : modèle de la règle, tronqué à 3 900 caractères.
 
@@ -132,13 +133,14 @@ Titre : nom du fichier sans extension, espaces en trop retirés, tronqué à 140
 
 | Cas | Comportement |
 |---|---|
-| `TransientError` (réseau, délai, 5xx) | Fichier laissé en l'état, `attempts + 1`, repris au cycle suivant à l'étape interrompue. Un épisode déjà créé n'est jamais recréé. |
+| `TransientError` (réseau, délai, 5xx) | Fichier laissé en l'état, `attempts + 1`, repris au cycle suivant à l'étape interrompue. Un épisode déjà créé n'est jamais recréé ; une création restée sans réponse est d'abord cherchée sur Ausha (règle des 15 min, §5). |
 | 429 | Attente `Retry-After` (défaut 60 s), puis même requête. |
-| `AuthError` | Icône rouge, notification « Jeton Ausha invalide », plus aucun cycle jusqu'à modification du jeton. |
-| `RejectedError` (422) | `status = rejete`, message Ausha affiché. Pas de nouvel essai automatique ; bouton « Réessayer ». |
+| `AuthError` : 401 → jeton invalide ; 403 → jeton invalide seulement sur la liste des émissions, sinon refus ponctuel (`RejectedError`) | Icône rouge, notification « Jeton Ausha invalide » (de nouveau après un nouveau jeton s'il est toujours refusé), plus aucun cycle automatique jusqu'à modification du jeton. |
+| `RejectedError` (422, 403 hors liste des émissions, autres 4xx) | `status = rejete`, message Ausha affiché. Pas de nouvel essai automatique ; bouton « Réessayer ». |
 | 3 échecs consécutifs sur un fichier | `status = echec`, notification, bouton « Réessayer » (remet `attempts` à 0). |
 | Dossier surveillé introuvable | Icône orange, message dans l'Activité, cycle ignoré. |
 | Exception inattendue | Journalisée avec trace, le cycle passe au fichier suivant. |
+| Fermeture pendant un envoi | L'envoi est interrompu (`Cancelled`) et repris au démarrage suivant. Si le thread de synchro ne s'arrête pas en 15 s (réponse d'Ausha attendue), sortie forcée après écriture des logs ; l'étape `uploading` fait vérifier l'épisode au redémarrage. |
 
 Logs : `%APPDATA%\SyncAusha\logs\syncausha.log`, rotation 1 Mo × 5 fichiers. Le jeton n'apparaît jamais dans les logs.
 
