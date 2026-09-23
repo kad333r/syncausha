@@ -30,7 +30,7 @@ from syncausha.i18n import render, tr
 from syncausha.rules import validate_image
 from syncausha.ui.controller import AppController, Catalog
 from syncausha.ui.style import palette
-from syncausha.ui.widgets import isolate, leading_alignment, make_label
+from syncausha.ui.widgets import leading_alignment, make_label
 
 PREVIEW_SIZE = 110
 THUMBNAIL_SIZE = 36
@@ -163,8 +163,8 @@ class RulesPage(QWidget):
         for index, rule in enumerate(self.controller.config.rules):
             target = rule.show_name or tr("rules_show_fallback", id=rule.show_id)
             if rule.playlist_name:
-                # Noms isolés : en arabe, un nom qui commence par des chiffres garde son ordre.
-                target = tr("rules_show_and_playlist", show=isolate(target), playlist=isolate(rule.playlist_name))
+                # tr() isole les noms en arabe : un nom qui commence par des chiffres garde son ordre.
+                target = tr("rules_show_and_playlist", show=target, playlist=rule.playlist_name)
             item = QListWidgetItem(_thumbnail(rule.image_path), f"{rule.keyword}\n{target}")
             item.setData(Qt.ItemDataRole.UserRole, index)
             self.list.addItem(item)

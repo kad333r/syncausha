@@ -162,6 +162,6 @@ def test_validation_messages_are_translatable(tmp_path):
     problem = validate_rule(Rule(keyword="A", show_id=1, show_name="Mars"), {2: set()})
     assert render(problem, lang="en") == "Show not found on Ausha: Mars"
     assert render(problem, lang="fr") == "Émission introuvable sur Ausha : Mars"
-    assert render(problem, lang="ar") == "البرنامج غير موجود على Ausha: Mars"
+    assert render(problem, lang="ar") == "البرنامج غير موجود على Ausha: \u2068Mars\u2069"  # nom isolé
     small = validate_image(make_image(tmp_path / "s.png", (300, 200)))
     assert render(small, lang="en") == "Cover image too small (300×200, minimum 400×400)"

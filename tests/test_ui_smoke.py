@@ -1,6 +1,8 @@
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton
 
 from syncausha import autostart, i18n
@@ -212,8 +214,17 @@ def test_token_test_result_replaces_the_hint(controller, french):
 
 def test_arabic_labels_starting_with_latin_text_read_right_to_left(qapp):
     """RLM en tête : un nom de fichier (isolé, donc intact) ou une phrase qui commence par un titre latin
-    s'affiche de droite à gauche, aligné à droite ; une phrase arabe reste telle quelle."""
+    (isolé par tr) s'affiche de droite à gauche, aligné à droite ; une phrase arabe reste telle quelle.
+
+    Un titre de ligne est sélectionnable, donc affiché par un QTextDocument : son sens est celui du premier
+    caractère fort, isolats compris. Sans la marque, « titre — ستُنشر… » partirait à gauche."""
     rlm, fsi, pdi = "\u200f", "\u2068", "\u2069"
+
+    def direction(text):
+        document = QTextDocument()
+        document.setPlainText(text)
+        return document.firstBlock().textDirection()
+
     i18n.set_language("ar")
     row = Row("2024-05 MARS ATTACK (bonus).mp3", tr("err_no_rule"))
     title, subtitle = row.findChildren(QLabel)
@@ -221,8 +232,15 @@ def test_arabic_labels_starting_with_latin_text_read_right_to_left(qapp):
     assert title.text() == f"{rlm}{fsi}2024-05 MARS ATTACK (bonus).mp3{pdi}"
     assert subtitle.text() == tr("err_no_rule")
     line = render(msg("dry_line", title="LE DEBRIEF 45", detail=msg("dry_would_publish", show="Silicon Talk")))
+    assert line.startswith(f"{fsi}LE DEBRIEF 45{pdi}")
+    assert direction(line) == Qt.LayoutDirection.LeftToRight
     assert bidi_text(line) == rlm + line
-    assert bidi_text(bidi_text(line)) == bidi_text(line)
+    assert direction(bidi_text(line)) == Qt.LayoutDirection.RightToLeft
+    # Message d'Ausha sans lettre arabe : isolé en bloc une seule fois, avec la marque RLM en tête.
+    detail = render(msg("err_ausha", detail="File too large", status=422))
+    assert bidi_text(detail) == f"{rlm}{fsi}{detail}{pdi}"
+    for text in (line, detail):
+        assert bidi_text(bidi_text(text)) == bidi_text(text)  # jamais de marque en double
     i18n.set_language("en")
     assert bidi_text("MARS ATTACK 12.mp3") == "MARS ATTACK 12.mp3"
 

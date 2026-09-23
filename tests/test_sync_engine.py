@@ -775,4 +775,4 @@ def test_partial_publication_keeps_the_ausha_detail_in_every_language(env):
     env.engine.run_cycle()
     stored = only_entry(env).last_error
     assert render(stored, lang="en") == "Episode published, but it couldn't be added to the playlist: Refus"
-    assert render(stored, lang="ar").endswith(": Refus")
+    assert render(stored, lang="ar").endswith(": \u2068Refus\u2069")  # détail d'Ausha isolé

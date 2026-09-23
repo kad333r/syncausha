@@ -35,9 +35,9 @@ def bidi_text(text: str) -> str:
     """Texte d'un libellé, lu dans le sens de l'interface.
 
     Qt donne à un libellé le sens de son premier caractère fort : en arabe, un texte qui commence par un
-    nom latin (fichier, chemin, « titre — verdict ») serait lu de gauche à droite, aligné à gauche, les
-    mots dans le désordre. Une marque RLM en tête le remet de droite à gauche ; un texte sans lettre arabe
-    (nom de fichier, message d'Ausha) est en plus isolé pour rester lisible tel quel."""
+    nom latin (fichier, chemin, « titre — verdict », même isolé par tr) serait lu de gauche à droite,
+    aligné à gauche, les mots dans le désordre. Une marque RLM en tête le remet de droite à gauche ; un
+    texte sans lettre arabe (nom de fichier, message d'Ausha) est en plus isolé pour rester lisible tel quel."""
     if not text or not i18n.is_rtl() or _starts_right_to_left(text):
         return text
     if any(unicodedata.bidirectional(char) in ("R", "AL") for char in text):
@@ -46,15 +46,11 @@ def bidi_text(text: str) -> str:
 
 
 def _starts_right_to_left(text: str) -> bool:
-    """Premier caractère fort hors isolats de droite à gauche (comme Qt pour choisir le sens d'un texte)."""
-    depth = 0
+    """Premier caractère fort de droite à gauche, isolats compris : un libellé simple les saute, mais un
+    libellé sélectionnable (QTextDocument) non. « titre isolé — جملة » a donc besoin de la marque RLM."""
     for char in text:
         kind = unicodedata.bidirectional(char)
-        if kind in ("LRI", "RLI", "FSI"):
-            depth += 1
-        elif kind == "PDI":
-            depth = max(depth - 1, 0)
-        elif depth == 0 and kind in ("L", "R", "AL"):
+        if kind in ("L", "R", "AL"):
             return kind != "L"
     return False
 
