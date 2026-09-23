@@ -139,9 +139,13 @@ class SettingsPage(QWidget):
             dry_run=self.dry_run.isChecked(),
         )
         self.controller.update_config(config)
-        autostart.set_enabled(self.autostart.isChecked())
+        message = "Réglages enregistrés"
+        try:
+            autostart.set_enabled(self.autostart.isChecked())
+        except OSError as exc:  # registre verrouillé par une stratégie ou un antivirus
+            message = f"Démarrage automatique non modifié : {exc}"
         self.load()
-        self.saved_label.setText("Réglages enregistrés")
+        self.saved_label.setText(message)
         if not config.paused:
             self.controller.sync_now()
 

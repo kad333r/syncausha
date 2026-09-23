@@ -28,3 +28,11 @@ def test_launch_command_in_dev_mode():
     command = autostart.launch_command()
     assert command.endswith("--minimized")
     assert "run_syncausha.py" in command
+
+
+def test_unreadable_registry_counts_as_disabled(monkeypatch):
+    def denied(*args):
+        raise PermissionError(13, "Accès refusé")
+
+    monkeypatch.setattr(autostart.winreg, "OpenKey", denied)
+    assert autostart.is_enabled(NAME) is False

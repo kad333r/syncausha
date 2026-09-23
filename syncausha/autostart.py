@@ -19,11 +19,12 @@ def launch_command() -> str:
 
 
 def is_enabled(value_name: str = VALUE_NAME) -> bool:
+    """False si la valeur est absente ou le registre illisible."""
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
             winreg.QueryValueEx(key, value_name)
             return True
-    except FileNotFoundError:
+    except OSError:
         return False
 
 
