@@ -1,6 +1,7 @@
 """Correspondance fichier → règle, titre/description d'épisode, validation des règles."""
 from __future__ import annotations
 
+import re
 import unicodedata
 from pathlib import Path
 
@@ -12,14 +13,18 @@ MAX_TITLE_LENGTH = 140
 MAX_DESCRIPTION_LENGTH = 3900
 MIN_IMAGE_SIDE = 400
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
-_SEPARATORS = str.maketrans({"_": " ", "-": " ", ".": " "})
+_LIGATURES = {"œ": "oe", "æ": "ae"}
+_NON_ALNUM = re.compile(r"[\W_]+")
 
 
 def normalize(text: str) -> str:
-    """Minuscules, sans accents, séparateurs → espaces, espaces multiples réduits."""
+    """Minuscules, sans accents, ligatures développées, séparateurs → espaces."""
     decomposed = unicodedata.normalize("NFKD", text)
     stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
-    return " ".join(stripped.translate(_SEPARATORS).casefold().split())
+    folded = stripped.casefold()
+    for ligature, expansion in _LIGATURES.items():
+        folded = folded.replace(ligature, expansion)
+    return _NON_ALNUM.sub(" ", folded).strip()
 
 
 def find_rule(filename: str, rules: list[Rule]) -> Rule | None:
@@ -33,7 +38,7 @@ def find_rule(filename: str, rules: list[Rule]) -> Rule | None:
 
 
 def episode_title(path: Path) -> str:
-    return " ".join(path.stem.split())[:MAX_TITLE_LENGTH]
+    return " ".join(path.stem.split())[:MAX_TITLE_LENGTH].rstrip()
 
 
 def episode_description(rule: Rule) -> str:
@@ -50,9 +55,9 @@ def validate_image(path: str | Path) -> str | None:
     try:
         with Image.open(image_path) as image:
             fmt, (width, height) = image.format, image.size
-    except (OSError, UnidentifiedImageError):
+    except (OSError, UnidentifiedImageError, Image.DecompressionBombError):
         return "Image illisible"
-    if fmt not in ("JPEG", "PNG"):
+    if fmt not in ("JPEG", "PNG", "MPO"):
         return "L'image doit être au format JPEG ou PNG"
     if width < MIN_IMAGE_SIDE or height < MIN_IMAGE_SIDE:
         return f"Image trop petite ({width}×{height}, minimum 400×400)"

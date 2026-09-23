@@ -33,6 +33,21 @@ def test_accents_are_ignored():
     assert find_rule("LE DEBRIEF 44.mp3", [DEBRIEF]) is DEBRIEF
 
 
+def test_oe_ligature_matches_oe_keyword():
+    rule = Rule(keyword="coeur", show_id=1)
+    assert find_rule("Cœur de pirate 3.mp3", [rule]) is rule
+
+
+def test_curly_apostrophe_matches_straight_keyword():
+    rule = Rule(keyword="L'Heure", show_id=1)
+    assert find_rule("L’Heure bleue.mp3", [rule]) is rule
+
+
+def test_en_dash_matches_space_separated_keyword():
+    rule = Rule(keyword="MARS ATTACK", show_id=1)
+    assert find_rule("MARS–ATTACK 2.mp3", [rule]) is rule
+
+
 def test_first_matching_rule_wins():
     generic = Rule(keyword="ATTACK", show_id=9)
     assert find_rule("MARS ATTACK 1.mp3", [generic, MARS]) is generic
@@ -57,6 +72,13 @@ def test_episode_title_strips_extension_and_extra_spaces():
 
 def test_episode_title_is_truncated():
     assert len(episode_title(Path("x" * 200 + ".mp3"))) == 140
+
+
+def test_episode_title_truncation_strips_trailing_space():
+    stem = "x" * 139 + " abc"
+    title = episode_title(Path(f"D:/p/{stem}.mp3"))
+    assert title == "x" * 139
+    assert not title.endswith(" ")
 
 
 def test_episode_description_from_template():
@@ -96,6 +118,30 @@ def test_not_an_image(tmp_path):
 def test_too_heavy(tmp_path, monkeypatch):
     monkeypatch.setattr("syncausha.rules.MAX_IMAGE_BYTES", 10)
     assert "trop lourde" in validate_image(make_image(tmp_path / "a.png"))
+
+
+def test_mpo_format_is_accepted(tmp_path, monkeypatch):
+    """Les JPEG multi-images produits par certains appareils photo sont détectés en MPO par Pillow."""
+    path = make_image(tmp_path / "a.jpg", fmt="JPEG")
+
+    class FakeMpoImage:
+        format = "MPO"
+        size = (1400, 1400)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(Image, "open", lambda p: FakeMpoImage())
+    assert validate_image(path) is None
+
+
+def test_decompression_bomb_is_rejected(tmp_path, monkeypatch):
+    path = make_image(tmp_path / "bomb.png")
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1000)
+    assert validate_image(path) == "Image illisible"
 
 
 def test_validate_rule_checks_show_playlist_and_image(tmp_path):
