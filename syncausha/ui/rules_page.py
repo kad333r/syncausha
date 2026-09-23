@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
@@ -93,6 +94,8 @@ class RulesPage(QWidget):
         form.addRow("Émission", self.show_combo)
         self.playlist_combo = QComboBox()
         form.addRow("Playlist", self.playlist_combo)
+        for combo in (self.show_combo, self.playlist_combo):
+            combo.setItemDelegate(QStyledItemDelegate(combo))  # liste déroulante stylée par la feuille de style
         self.description = QPlainTextEdit()
         self.description.setPlaceholderText("Nouvel épisode de Mars Attack. Retrouvez-nous sur…")
         self.description.setFixedHeight(90)
@@ -292,20 +295,25 @@ def _thumbnail(path: str) -> QIcon:
     """Carré arrondi : l'image recadrée, ou une case neutre qui garde les textes alignés."""
     size = THUMBNAIL_SIZE * 2  # nette sur les écrans haute densité
     image = QPixmap(path) if path else QPixmap()
+    colors = palette()
     if image.isNull():
-        brush = QBrush(QColor(palette()["hover"]))
+        brush, pen = QBrush(QColor(colors["hover"])), QPen(QColor(colors["border"]), 2)
     else:
         image = image.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
         brush = QBrush(image.copy((image.width() - size) // 2, (image.height() - size) // 2, size, size))
+        pen = QPen(Qt.PenStyle.NoPen)
     thumbnail = QPixmap(size, size)
     thumbnail.fill(Qt.GlobalColor.transparent)
     painter = QPainter(thumbnail)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setPen(pen)
     painter.setBrush(brush)
-    painter.drawRoundedRect(thumbnail.rect(), 12, 12)
+    painter.drawRoundedRect(thumbnail.rect().adjusted(1, 1, -1, -1), 12, 12)
     painter.end()
-    return QIcon(thumbnail)
+    icon = QIcon()
+    for mode in (QIcon.Mode.Normal, QIcon.Mode.Selected):  # sans la teinte bleue de la ligne sélectionnée
+        icon.addPixmap(thumbnail, mode)
+    return icon
 
 
 def _set_combo_items(combo: QComboBox, items: list[tuple[str, object]], selected: object) -> None:

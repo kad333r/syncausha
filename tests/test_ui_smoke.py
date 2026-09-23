@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton
 
@@ -7,11 +9,12 @@ from syncausha.config import Config, Rule, save_config
 from syncausha.journal import Journal, Status
 from syncausha.ui import controller as controller_module
 from syncausha.ui import rules_page as rules_page_module
+from syncausha.ui import style
 from syncausha.ui.activity_page import ActivityPage
 from syncausha.ui.controller import AppController
 from syncausha.ui.main_window import ACTIVITY, MainWindow
 from syncausha.ui.rules_page import RulesPage
-from syncausha.ui.settings_page import SettingsPage
+from syncausha.ui.settings_page import TOKEN_HINT, SettingsPage
 from syncausha.ui.tray import Tray
 
 
@@ -157,3 +160,31 @@ def test_saving_or_deleting_a_rule_runs_a_sync(controller, syncs, monkeypatch):
     page.keyword.setText("interview")
     page._save()
     assert syncs == [True, True]  # en pause : rien n'est lancé
+
+
+def test_activity_refresh_hides_the_previous_rows_at_once(controller):
+    controller.journal.ensure("h1", "interview_brut.mp3", 1)
+    controller.journal.update("h1", status=Status.SANS_REGLE, last_error="Aucune règle ne correspond")
+    page = ActivityPage(controller)
+    page.refresh()  # les anciennes lignes, détruites plus tard, ne doivent plus s'afficher
+    visible = [label.text() for label in page.findChildren(QLabel) if label.isVisibleTo(page)]
+    assert visible.count("interview_brut.mp3") == 1
+
+
+def test_token_test_result_replaces_the_hint(controller):
+    page = SettingsPage(controller)
+    assert page.test_result.text() == TOKEN_HINT
+    page._on_test_failed(Exception("jeton refusé"))
+    assert page.test_result.text() == "Échec : jeton refusé"
+    assert page.test_result.objectName() == "error"
+    page.load()
+    assert page.test_result.text() == TOKEN_HINT
+    assert page.test_result.objectName() == "muted"
+
+
+def test_stylesheet_is_complete_for_both_palettes():
+    assert style.LIGHT.keys() == style.DARK.keys()
+    for path in style.IMAGES.values():
+        assert Path(path).is_file()
+    for colors in (style.LIGHT, style.DARK):
+        assert "$" not in style.stylesheet(colors)

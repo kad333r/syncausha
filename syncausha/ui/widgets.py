@@ -45,9 +45,20 @@ class Row(QFrame):
             layout.addWidget(trailing, 0, Qt.AlignmentFlag.AlignVCenter)
 
 
+def set_tone(label: QLabel, object_name: str) -> None:
+    """Change le style d'un libellé (muted, error…) déjà affiché."""
+    if label.objectName() != object_name:
+        label.setObjectName(object_name)
+        label.style().unpolish(label)
+        label.style().polish(label)
+
+
 def clear_layout(layout: QLayout) -> None:
     while layout.count():
         item = layout.takeAt(0)
         widget = item.widget()
         if widget is not None:
+            # Masqué tout de suite : sinon il reste affiché, hors mise en page, jusqu'à sa destruction
+            # (différée, car le bouton cliqué qui a lancé le rafraîchissement peut en faire partie).
+            widget.hide()
             widget.deleteLater()

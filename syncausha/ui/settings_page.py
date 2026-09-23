@@ -22,7 +22,9 @@ from PySide6.QtWidgets import (
 from syncausha import autostart
 from syncausha.config import MAX_INTERVAL, MIN_INTERVAL, app_data_dir
 from syncausha.ui.controller import AppController, Catalog
-from syncausha.ui.widgets import make_label
+from syncausha.ui.widgets import make_label, set_tone
+
+TOKEN_HINT = "Le jeton se crée dans Ausha : Mon compte → API publique."
 
 
 class SettingsPage(QWidget):
@@ -37,6 +39,7 @@ class SettingsPage(QWidget):
         card.setObjectName("card")
         form = QFormLayout(card)
         form.setContentsMargins(16, 16, 16, 16)
+        form.setHorizontalSpacing(16)
         form.setVerticalSpacing(12)
 
         self.token = QLineEdit()
@@ -46,10 +49,13 @@ class SettingsPage(QWidget):
         token_row = QHBoxLayout()
         token_row.addWidget(self.token, 1)
         token_row.addWidget(test_button)
-        form.addRow("Jeton Ausha", token_row)
-        self.test_result = make_label(object_name="muted", wrap=True)
-        form.addRow("", self.test_result)
-        form.addRow("", make_label("Le jeton se crée dans Ausha : Mon compte → API publique.", "muted", wrap=True))
+        token_field = QVBoxLayout()
+        token_field.setSpacing(6)
+        token_field.addLayout(token_row)
+        # Aide sous le jeton, remplacée par le résultat du test de connexion.
+        self.test_result = make_label(TOKEN_HINT, "muted", wrap=True)
+        token_field.addWidget(self.test_result)
+        form.addRow("Jeton Ausha", token_field)
 
         self.folder = QLineEdit()
         self.folder.setReadOnly(True)
@@ -63,6 +69,7 @@ class SettingsPage(QWidget):
         self.interval = QSpinBox()
         self.interval.setRange(MIN_INTERVAL, MAX_INTERVAL)
         self.interval.setSuffix(" min")
+        self.interval.setFixedWidth(110)
         form.addRow("Vérifier toutes les", self.interval)
 
         self.autostart = QCheckBox("Lancer au démarrage de Windows")
@@ -108,6 +115,7 @@ class SettingsPage(QWidget):
         self._saved_paused = config.paused
         self.dry_run.setChecked(config.dry_run)
         self.saved_label.clear()
+        self._show_test_result(TOKEN_HINT)
 
     def _follow_pause(self, _state: str, _message: str) -> None:
         """Pause changée ailleurs (icône) : seule cette case suit, les autres saisies sont gardées."""
@@ -122,15 +130,19 @@ class SettingsPage(QWidget):
             self.folder.setText(os.path.normpath(folder))
 
     def _test(self) -> None:
-        self.test_result.setText("Connexion à Ausha…")
+        self._show_test_result("Connexion à Ausha…")
         self.controller.fetch_catalog(self._on_test_ok, self._on_test_failed, token=self.token.text().strip() or None)
 
     def _on_test_ok(self, catalog: Catalog) -> None:
         names = ", ".join(sorted(show.name for show in catalog)) or "aucune émission"
-        self.test_result.setText(f"Connexion réussie. Émissions : {names}")
+        self._show_test_result(f"Connexion réussie. Émissions : {names}")
 
     def _on_test_failed(self, error: Exception) -> None:
-        self.test_result.setText(f"Échec : {error}")
+        self._show_test_result(f"Échec : {error}", "error")
+
+    def _show_test_result(self, text: str, tone: str = "muted") -> None:
+        self.test_result.setText(text)
+        set_tone(self.test_result, tone)
 
     def _save(self) -> None:
         token = self.token.text().strip()
