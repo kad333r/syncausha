@@ -7,6 +7,7 @@ from PIL import Image
 import syncausha.sync_engine as sync_engine
 from syncausha.ausha_client import AuthError, Cancelled, Episode, Playlist, RejectedError, Show, TransientError
 from syncausha.config import Config, Rule
+from syncausha.i18n import render
 from syncausha.journal import Journal, Status, Step
 from syncausha.scanner import scan_ready_files
 from syncausha.sync_engine import RECREATE_AFTER_SECONDS, SyncEngine, _same_title
@@ -184,7 +185,7 @@ def test_broken_rule_blocks_upload(env):
     assert env.engine.run_cycle().state == "attention"
     entry = only_entry(env)
     assert entry.status is Status.REGLE_CASSEE
-    assert "Playlist introuvable" in entry.last_error
+    assert "Playlist introuvable" in render(entry.last_error, lang="fr")
     assert env.client.calls == []
     assert kinds(env) == ["broken_rule"]
 
@@ -280,7 +281,7 @@ def test_cancel_during_upload_leaves_file_pending(env):
     env.client.fail["create_episode"] = [Cancelled("Envoi interrompu.")]
     add_file(env, "MARS ATTACK 13.mp3")
     result = env.engine.run_cycle()
-    assert (result.state, result.message) == ("paused", "Arrêt demandé")
+    assert (result.state, render(result.message, lang="fr")) == ("paused", "Arrêt demandé")
     entry = only_entry(env)
     assert entry.status is Status.EN_ATTENTE
     assert entry.attempts == 0
@@ -314,7 +315,7 @@ def test_dry_run_publishes_nothing(env):
     assert env.engine.run_cycle().state == "ok"
     assert env.client.calls == []
     assert ("find", 1, "MARS ATTACK 13") in env.client.reads
-    assert [(e.kind, e.detail) for e in env.events] == [("dry_run", "Serait publié dans Mars Attack")]
+    assert [(e.kind, render(e.detail, lang="fr")) for e in env.events] == [("dry_run", "Serait publié dans Mars Attack")]
     env.config.dry_run = False
     env.engine.run_cycle()
     assert only_entry(env).status is Status.PUBLIE
@@ -326,7 +327,9 @@ def test_dry_run_reports_existing_episode_without_writing(env):
     add_file(env, "MARS ATTACK 13.mp3")
     assert env.engine.run_cycle().state == "ok"
     assert env.client.calls == []
-    assert [(e.kind, e.detail) for e in env.events] == [("dry_run", "Déjà présent sur Ausha — ne serait pas publié")]
+    assert [(e.kind, render(e.detail, lang="fr")) for e in env.events] == [
+        ("dry_run", "Déjà présent sur Ausha — ne serait pas publié")
+    ]
     entry = only_entry(env)
     assert (entry.status, entry.step) == (Status.EN_ATTENTE, Step.NONE)
 
@@ -371,7 +374,7 @@ def test_unexpected_error_counts_as_attempt(env):
     entry = only_entry(env)
     assert entry.status is Status.EN_ATTENTE
     assert entry.attempts == 1
-    assert "bug" in entry.last_error
+    assert render(entry.last_error, lang="fr") == "Erreur inattendue : bug"
 
 
 def test_unexpected_os_error_is_a_file_failure_not_offline(env, monkeypatch):
@@ -382,7 +385,7 @@ def test_unexpected_os_error_is_a_file_failure_not_offline(env, monkeypatch):
     add_file(env, "MARS ATTACK 13.mp3")
     assert env.engine.run_cycle().state == "ok"
     entry = only_entry(env)
-    assert entry.last_error.startswith("Erreur inattendue")
+    assert render(entry.last_error, lang="fr").startswith("Erreur inattendue")
     assert entry.attempts == 1
 
 
@@ -414,7 +417,7 @@ def test_lost_create_response_is_not_recreated_while_ausha_search_lags(env):
     entry = only_entry(env)
     assert [c[0] for c in env.client.calls] == ["create"]
     assert (entry.status, entry.step, entry.attempts) == (Status.EN_ATTENTE, Step.UPLOADING, 1)
-    assert entry.last_error == "Envoi précédent en cours de vérification sur Ausha"
+    assert render(entry.last_error, lang="fr") == "Envoi précédent en cours de vérification sur Ausha"
     env.clock.now += 60  # 15 min après l'échec de la création
     env.engine.run_cycle()
     assert [c[0] for c in env.client.calls] == ["create", "create", "image", "playlist"]
@@ -535,7 +538,7 @@ def test_cancel_between_files(env):
     add_file(env, "MARS ATTACK 13.mp3")
     add_file(env, "MARS ATTACK 14.mp3", b"episode 14")
     result = engine.run_cycle()
-    assert (result.state, result.message) == ("paused", "Arrêt demandé")
+    assert (result.state, render(result.message, lang="fr")) == ("paused", "Arrêt demandé")
     assert [c[2] for c in env.client.calls if c[0] == "create"] == ["MARS ATTACK 13"]
 
 
@@ -586,7 +589,7 @@ def test_files_present_when_the_folder_is_chosen_are_ignored_without_calling_aus
     )
     result = engine.run_cycle()
     assert (result.state, result.count, result.folder) == ("baseline", 2, str(env.folder))
-    assert result.message == "2 fichier(s) déjà présent(s) ignoré(s)"
+    assert render(result.message, lang="fr") == "2 fichier(s) déjà présent(s) ignoré(s)"
     assert factory_calls == []
     assert env.client.reads == [] and env.client.calls == []
     assert env.events == []
@@ -716,8 +719,8 @@ def test_refusal_after_the_episode_is_live_is_a_partial_publication(env, step, m
     add_file(env, "MARS ATTACK 13.mp3")
     assert env.engine.run_cycle().state == "attention"
     entry = only_entry(env)
-    assert (entry.status, entry.last_error) == (Status.REJETE, message)
-    assert [(e.kind, e.detail) for e in env.events if e.kind != "progress"] == [("partial", message)]
+    assert (entry.status, render(entry.last_error, lang="fr")) == (Status.REJETE, message)
+    assert [(e.kind, render(e.detail, lang="fr")) for e in env.events if e.kind != "progress"] == [("partial", message)]
     env.journal.reset_for_retry(entry.hash)  # « Réessayer » reprend à l'étape refusée
     env.engine.run_cycle()
     assert creates(env) == ["MARS ATTACK 13"]
@@ -736,7 +739,40 @@ def test_rule_moved_to_another_show_mid_publication_is_flagged(env):
     assert env.engine.run_cycle().state == "attention"
     entry = only_entry(env)
     assert entry.status is Status.REGLE_CASSEE
-    assert entry.last_error == "La règle a changé d'émission pendant la publication : vérifiez l'épisode sur Ausha."
+    assert render(entry.last_error, lang="fr") == (
+        "La règle a changé d'émission pendant la publication : vérifiez l'épisode sur Ausha."
+    )
     assert env.client.calls == []
     assert not [r for r in env.client.reads if r[0] == "find"]
     assert kinds(env)[-1] == "broken_rule"
+
+
+def test_messages_are_translatable(env):
+    add_file(env, "interview_brut.mp3")
+    env.engine.run_cycle()
+    entry = only_entry(env)
+    assert render(entry.last_error, lang="en") == "No rule matches this file"
+    assert render(entry.last_error, lang="fr") == "Aucune règle ne correspond"
+    assert render(entry.last_error, lang="ar") != entry.last_error
+
+
+def test_cycle_messages_are_translatable(env, tmp_path):
+    env.config.watch_folder = str(tmp_path / "absent")
+    result = env.engine.run_cycle()
+    assert render(result.message, lang="en") == f"Folder not found: {tmp_path / 'absent'}"
+    assert render(result.message, lang="fr") == f"Dossier introuvable : {tmp_path / 'absent'}"
+    env.config.watch_folder = str(env.folder)
+    env.config.baseline_folder = ""
+    add_file(env, "MARS ATTACK 12.mp3")
+    result = env.engine.run_cycle()
+    assert render(result.message, lang="en") == "Existing files ignored: 1"
+    assert render(result.message, lang="ar") == "الملفات الموجودة مسبقًا المتجاهَلة: 1"
+
+
+def test_partial_publication_keeps_the_ausha_detail_in_every_language(env):
+    env.client.fail["add_to_playlist"] = [RejectedError("Refus")]
+    add_file(env, "MARS ATTACK 13.mp3")
+    env.engine.run_cycle()
+    stored = only_entry(env).last_error
+    assert render(stored, lang="en") == "Episode published, but it couldn't be added to the playlist: Refus"
+    assert render(stored, lang="ar").endswith(": Refus")

@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from syncausha.config import DEFAULT_API_BASE_URL
+from syncausha.i18n import msg
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ ProgressCallback = Callable[[int], None]
 
 
 class AushaError(Exception):
-    """Erreur renvoyée par Ausha ou par le réseau."""
+    """Erreur renvoyée par Ausha ou par le réseau ; str(exc) est un message traduisible (i18n.msg)."""
 
 
 class AuthError(AushaError):
@@ -89,7 +90,7 @@ class AushaClient:
     ) -> None:
         # Jamais le jeton dans le message : il finirait dans les logs.
         if not token or not all("!" <= c <= "~" for c in token):
-            raise AuthError("Jeton Ausha invalide (caractères non autorisés).")
+            raise AuthError(msg("err_token_invalid_chars"))
         self._http = httpx.Client(
             base_url=base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
@@ -135,7 +136,7 @@ class AushaClient:
         try:
             return int(body["data"]["id"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise TransientError("Réponse inattendue d'Ausha : identifiant de l'épisode absent.") from exc
+            raise TransientError(msg("err_missing_episode_id")) from exc
 
     def upload_episode_image(self, episode_id: int, image_path: Path) -> None:
         self._send("POST", f"/podcasts/{episode_id}/image", file_path=image_path)
@@ -169,14 +170,14 @@ class AushaClient:
     ) -> dict[str, Any]:
         # Vérifié avant chaque requête, donc avant chaque page d'une liste.
         if self._cancelled():
-            raise Cancelled("Envoi interrompu.")
+            raise Cancelled(msg("err_upload_interrupted"))
         for attempt in range(self._max_retries + 1):
             response = self._request_once(method, url, params, data, file_path, on_progress)
             if response.status_code != 429 or attempt == self._max_retries:
                 break
             delay = _retry_after(response)
             if delay > MAX_RETRY_AFTER:
-                raise TransientError(f"Ausha demande de patienter {delay:.0f} s : nouvel essai au prochain passage.")
+                raise TransientError(msg("err_rate_limited", seconds=f"{delay:.0f}"))
             log.info("Ausha demande une pause de %.0f s", delay)
             self._wait(delay)
         return _parse(response, auth_probe=method == "GET" and url == _GRANTED_SHOWS_URL, strict=method == "GET")
@@ -188,7 +189,7 @@ class AushaClient:
         if self._cancel is None:
             self._sleep(delay)
         elif self._cancel.wait(delay):
-            raise Cancelled("Envoi interrompu.")
+            raise Cancelled(msg("err_upload_interrupted"))
 
     def _request_once(self, method, url, params, data, file_path, on_progress) -> httpx.Response:
         handle = None
@@ -200,15 +201,15 @@ class AushaClient:
                     handle = open(file_path, "rb")
                     size = file_path.stat().st_size
                 except OSError as exc:
-                    raise TransientError(f"Fichier illisible : {file_path.name} ({exc})") from exc
+                    raise TransientError(msg("err_file_unreadable", file=file_path.name, detail=exc)) from exc
                 reader = _ProgressReader(handle, size, on_progress, self._cancel)
                 files = {"file": (file_path.name, reader, _MIME_TYPES.get(file_path.suffix.lower(), "application/octet-stream"))}
                 timeout = UPLOAD_TIMEOUT
             return self._http.request(method, url, params=params, data=data, files=files, timeout=timeout)
         except httpx.TransportError as exc:
             if self._cancelled():  # connexion coupée par l'arrêt de l'application
-                raise Cancelled("Envoi interrompu.") from exc
-            raise TransientError(f"Connexion à Ausha impossible : {exc}") from exc
+                raise Cancelled(msg("err_upload_interrupted")) from exc
+            raise TransientError(msg("err_network", detail=exc)) from exc
         finally:
             if handle is not None:
                 handle.close()
@@ -227,7 +228,7 @@ class _ProgressReader:
 
     def read(self, size: int = -1) -> bytes:
         if self._cancel is not None and self._cancel.is_set():
-            raise Cancelled("Envoi interrompu.")
+            raise Cancelled(msg("err_upload_interrupted"))
         chunk = self._handle.read(size)
         if self._callback and self._total:
             self._sent += len(chunk)
@@ -273,10 +274,10 @@ def _parse(response: httpx.Response, *, auth_probe: bool = False, strict: bool =
         if not isinstance(body, dict):
             if not strict:
                 return {}
-            raise TransientError(f"Réponse inattendue d'Ausha (HTTP {status}).")
+            raise TransientError(msg("err_unexpected_response", status=status))
         return body
     if 300 <= status < 400:
-        raise RejectedError(f"Ausha a répondu par une redirection (HTTP {status}) : vérifiez l'adresse de l'API.")
+        raise RejectedError(msg("err_redirect", status=status))
     message = _error_message(response)
     if status == 401 or (status == 403 and auth_probe):
         raise AuthError(message)
@@ -301,8 +302,8 @@ def _error_message(response: httpx.Response) -> str:
                     parts.append(str(messages))
         text = " ".join(p for p in parts if p).strip()
         if text:
-            return f"{text} (HTTP {response.status_code})"
-    return f"Ausha a répondu HTTP {response.status_code}"
+            return msg("err_ausha", detail=text, status=response.status_code)
+    return msg("err_http_status", status=response.status_code)
 
 
 def _name(item: dict) -> str:

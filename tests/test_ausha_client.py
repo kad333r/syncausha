@@ -14,6 +14,7 @@ from syncausha.ausha_client import (
     Show,
     TransientError,
 )
+from syncausha.i18n import render
 
 BASE = "https://api.test/v1"
 
@@ -156,20 +157,25 @@ def test_forbidden_elsewhere_is_rejected_not_auth(api, client):
 
 def test_redirect_is_rejected_with_clear_message(api, client):
     api.get("/shows/granted").respond(302, headers={"Location": "https://ailleurs.test/"})
-    with pytest.raises(RejectedError, match="redirection"):
+    with pytest.raises(RejectedError) as info:
         client.list_shows()
+    assert render(str(info.value), lang="fr") == (
+        "Ausha a répondu par une redirection (HTTP 302) : vérifiez l'adresse de l'API."
+    )
 
 
 def test_success_with_non_object_json_is_transient(api, client):
     api.get("/shows/granted").respond(200, json=[1, 2])
-    with pytest.raises(TransientError, match="inattendue"):
+    with pytest.raises(TransientError) as info:
         client.list_shows()
+    assert render(str(info.value), lang="fr") == "Réponse inattendue d'Ausha (HTTP 200)."
 
 
 def test_success_with_invalid_json_is_transient(api, client):
     api.get("/shows/granted").respond(200, text="<html>maintenance</html>")
-    with pytest.raises(TransientError, match="inattendue"):
+    with pytest.raises(TransientError) as info:
         client.list_shows()
+    assert "inattendue" in render(str(info.value), lang="fr")
 
 
 def test_write_success_with_non_object_json_is_still_success(api, client):
@@ -235,16 +241,19 @@ def test_pagination_has_a_hard_cap(api, client):
 
 @pytest.mark.parametrize("token", ["", "jeton avec espace", "jeton\n", "jeton-é", "jeton\x00"])
 def test_invalid_token_is_refused_without_leaking_it(token):
-    with pytest.raises(AuthError, match="caractères non autorisés") as info:
+    with pytest.raises(AuthError) as info:
         AushaClient(token, BASE)
+    assert "caractères non autorisés" in render(str(info.value), lang="fr")
     if token:
         assert token not in str(info.value)
+        assert all(token not in render(str(info.value), lang=lang) for lang in ("en", "fr", "ar"))
 
 
 def test_missing_audio_file_is_transient(api, client, tmp_path):
     api.post("/shows/1/podcasts").respond(201, json={"data": {"id": 1}})
-    with pytest.raises(TransientError, match="Fichier illisible : absent.mp3"):
+    with pytest.raises(TransientError) as info:
         client.create_episode(1, "T", "", tmp_path / "absent.mp3")
+    assert render(str(info.value), lang="fr").startswith("Fichier illisible : absent.mp3 (")
 
 
 def test_upload_has_content_length_and_long_read_timeout(api, client, audio):
@@ -316,3 +325,28 @@ def test_network_error_after_cancel_is_cancelled_not_transient(api):
     with AushaClient("t", BASE, cancel=cancel) as cancellable:
         with pytest.raises(Cancelled):
             cancellable.list_shows()
+
+
+def test_error_messages_are_translatable(api, client):
+    api.get("/shows/granted").respond(422, json={"message": "Invalid data"})
+    with pytest.raises(RejectedError) as info:
+        client.list_shows()
+    assert render(str(info.value), lang="fr") == "Invalid data (HTTP 422)"
+    assert render(str(info.value), lang="en") == "Invalid data (HTTP 422)"
+
+
+def test_error_without_text_is_translatable(api, client):
+    api.get("/shows/granted").respond(404, text="")
+    with pytest.raises(RejectedError) as info:
+        client.list_shows()
+    assert render(str(info.value), lang="fr") == "Ausha a répondu HTTP 404"
+    assert render(str(info.value), lang="en") == "Ausha returned HTTP 404"
+    assert render(str(info.value), lang="ar") == "ردّ Ausha بخطأ HTTP 404"
+
+
+def test_network_error_keeps_the_detail(api, client):
+    api.get("/shows/granted").mock(side_effect=httpx.ConnectError("boom"))
+    with pytest.raises(TransientError) as info:
+        client.list_shows()
+    assert render(str(info.value), lang="fr") == "Connexion à Ausha impossible : boom"
+    assert render(str(info.value), lang="en") == "Can't connect to Ausha: boom"

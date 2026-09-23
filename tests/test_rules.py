@@ -4,6 +4,7 @@ import pytest
 from PIL import Image
 
 from syncausha.config import Rule
+from syncausha.i18n import render
 from syncausha.rules import (
     episode_description,
     episode_title,
@@ -98,26 +99,26 @@ def test_valid_png_and_jpeg(tmp_path):
 
 
 def test_missing_image(tmp_path):
-    assert "introuvable" in validate_image(tmp_path / "nope.png")
+    assert "introuvable" in render(validate_image(tmp_path / "nope.png"), lang="fr")
 
 
 def test_small_image(tmp_path):
-    assert "trop petite" in validate_image(make_image(tmp_path / "s.png", (300, 300)))
+    assert render(validate_image(make_image(tmp_path / "s.png", (300, 300))), lang="fr") == "Image trop petite (300×300, minimum 400×400)"
 
 
 def test_wrong_format(tmp_path):
-    assert "JPEG ou PNG" in validate_image(make_image(tmp_path / "a.gif", fmt="GIF"))
+    assert "JPEG ou PNG" in render(validate_image(make_image(tmp_path / "a.gif", fmt="GIF")), lang="fr")
 
 
 def test_not_an_image(tmp_path):
     path = tmp_path / "x.png"
     path.write_bytes(b"pas une image")
-    assert validate_image(path) == "Image illisible"
+    assert render(validate_image(path), lang="fr") == "Image illisible"
 
 
 def test_too_heavy(tmp_path, monkeypatch):
     monkeypatch.setattr("syncausha.rules.MAX_IMAGE_BYTES", 10)
-    assert "trop lourde" in validate_image(make_image(tmp_path / "a.png"))
+    assert "trop lourde" in render(validate_image(make_image(tmp_path / "a.png")), lang="fr")
 
 
 def test_mpo_format_is_accepted(tmp_path, monkeypatch):
@@ -141,17 +142,26 @@ def test_mpo_format_is_accepted(tmp_path, monkeypatch):
 def test_decompression_bomb_is_rejected(tmp_path, monkeypatch):
     path = make_image(tmp_path / "bomb.png")
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1000)
-    assert validate_image(path) == "Image illisible"
+    assert render(validate_image(path), lang="fr") == "Image illisible"
 
 
 def test_validate_rule_checks_show_playlist_and_image(tmp_path):
     rule = Rule(keyword="A", show_id=1, show_name="Mars", playlist_id=7, playlist_name="S3")
     assert validate_rule(rule, {1: {7}}) is None
-    assert "Émission introuvable" in validate_rule(rule, {2: set()})
-    assert "Playlist introuvable" in validate_rule(rule, {1: {8}})
+    assert render(validate_rule(rule, {2: set()}), lang="fr") == "Émission introuvable sur Ausha : Mars"
+    assert render(validate_rule(rule, {1: {8}}), lang="fr") == "Playlist introuvable sur Ausha : S3"
     rule.image_path = str(tmp_path / "missing.png")
-    assert "Image introuvable" in validate_rule(rule, {1: {7}})
+    assert "Image introuvable" in render(validate_rule(rule, {1: {7}}), lang="fr")
 
 
 def test_rule_without_playlist_or_image_is_valid():
     assert validate_rule(Rule(keyword="A", show_id=1), {1: set()}) is None
+
+
+def test_validation_messages_are_translatable(tmp_path):
+    problem = validate_rule(Rule(keyword="A", show_id=1, show_name="Mars"), {2: set()})
+    assert render(problem, lang="en") == "Show not found on Ausha: Mars"
+    assert render(problem, lang="fr") == "Émission introuvable sur Ausha : Mars"
+    assert render(problem, lang="ar") == "البرنامج غير موجود على Ausha: Mars"
+    small = validate_image(make_image(tmp_path / "s.png", (300, 200)))
+    assert render(small, lang="en") == "Cover image too small (300×200, minimum 400×400)"

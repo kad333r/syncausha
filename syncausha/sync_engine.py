@@ -20,6 +20,7 @@ from syncausha.ausha_client import (
     TransientError,
 )
 from syncausha.config import Config, Rule
+from syncausha.i18n import msg, render
 from syncausha.journal import FINAL_STATUSES, Entry, Journal, Status, Step
 from syncausha.rules import episode_description, episode_title, find_rule, validate_rule
 from syncausha.scanner import ReadyFile, scan_ready_files
@@ -27,17 +28,20 @@ from syncausha.scanner import ReadyFile, scan_ready_files
 log = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
-STOP_MESSAGE = "Arrêt demandé"
+STOP_MESSAGE = msg("cycle_stop_requested")
 # Délai avant de recréer un épisode dont la création est restée sans réponse : la recherche
 # d'Ausha peut mettre du temps à voir un épisode tout juste créé.
 RECREATE_AFTER_SECONDS = 15 * 60
-CHECKING_MESSAGE = "Envoi précédent en cours de vérification sur Ausha"
-SHOW_CHANGED_MESSAGE = "La règle a changé d'émission pendant la publication : vérifiez l'épisode sur Ausha."
+CHECKING_MESSAGE = msg("err_upload_being_checked")
+SHOW_CHANGED_MESSAGE = msg("err_rule_show_changed")
 
 
 @dataclass(frozen=True)
 class Event:
-    """Événement par fichier : progress, published, no_rule, broken_rule, rejected, partial, failed, dry_run."""
+    """Événement par fichier : progress, published, no_rule, broken_rule, rejected, partial, failed, dry_run.
+
+    detail : message traduisible (i18n.msg), sauf pour published (nom de l'émission).
+    """
 
     kind: str
     title: str
@@ -48,7 +52,8 @@ class Event:
 @dataclass(frozen=True)
 class CycleResult:
     """État global après un cycle : ok, attention, paused, not_configured, folder_missing, auth_error, offline,
-    ou baseline (count fichiers déjà présents dans folder ont été ignorés, rien n'a été publié)."""
+    ou baseline (count fichiers déjà présents dans folder ont été ignorés, rien n'a été publié).
+    message : message traduisible (i18n.msg)."""
 
     state: str
     message: str = ""
@@ -87,29 +92,29 @@ class SyncEngine:
         if config.paused:
             return CycleResult("paused")
         if not config.watch_folder:
-            return CycleResult("not_configured", "Choisissez le dossier à surveiller.")
+            return CycleResult("not_configured", msg("cycle_choose_folder"))
         folder = Path(config.watch_folder)
         if not folder.is_dir():
-            return CycleResult("folder_missing", f"Dossier introuvable : {folder}")
+            return CycleResult("folder_missing", msg("cycle_folder_missing", folder=folder))
         if config.watch_folder != config.baseline_folder:
             return self._take_baseline(folder, config.watch_folder)
         try:
             client = self._client_factory(config, self.cancel_event)
         except AuthError as exc:
-            log.warning("Jeton Ausha inutilisable : %s", exc)
+            log.warning("Jeton Ausha inutilisable : %s", render(str(exc), lang="fr"))
             return CycleResult("auth_error", str(exc))
         if client is None:
-            return CycleResult("not_configured", "Renseignez votre jeton Ausha.")
+            return CycleResult("not_configured", msg("cycle_enter_token"))
         try:
             return self._run(config, folder, client)
         except Cancelled:
             log.info("Synchronisation interrompue")
             return CycleResult("paused", STOP_MESSAGE)
         except AuthError as exc:
-            log.warning("Jeton refusé par Ausha : %s", exc)
+            log.warning("Jeton refusé par Ausha : %s", render(str(exc), lang="fr"))
             return CycleResult("auth_error", str(exc))
         except AushaError as exc:
-            log.warning("Ausha injoignable : %s", exc)
+            log.warning("Ausha injoignable : %s", render(str(exc), lang="fr"))
             return CycleResult("offline", str(exc))
         finally:
             client.close()
@@ -142,7 +147,7 @@ class SyncEngine:
             self.journal.update(file_hash, status=Status.IGNORE, last_error="")
             count += 1
         log.info("Dossier %s pris en compte : %d fichier(s) déjà présent(s) ignoré(s)", folder, count)
-        return CycleResult("baseline", f"{count} fichier(s) déjà présent(s) ignoré(s)", count, watch_folder)
+        return CycleResult("baseline", msg("cycle_existing_files_ignored", n=count), count, watch_folder)
 
     def _run(self, config: Config, folder: Path, client: AushaClient) -> CycleResult:
         try:
@@ -175,7 +180,7 @@ class SyncEngine:
                 raise
             except Exception as exc:
                 log.exception("Erreur inattendue sur %s", ready.path.name)
-                self._record_failure(file_hash, episode_title(ready.path), f"Erreur inattendue : {exc}")
+                self._record_failure(file_hash, episode_title(ready.path), msg("err_unexpected", detail=exc))
         try:
             present = {path.name for path in folder.iterdir()}
         except OSError as exc:
@@ -184,7 +189,7 @@ class SyncEngine:
         self.journal.forget_unresolved(seen, present - hashed_names)
         attention = self.journal.needing_attention()
         if attention:
-            return CycleResult("attention", f"{len(attention)} fichier(s) à traiter")
+            return CycleResult("attention", msg("cycle_files_need_attention", n=len(attention)))
         return CycleResult("ok")
 
     def _load_catalog(self, client: AushaClient, rules: list[Rule]) -> dict[int, set[int]]:
@@ -199,7 +204,7 @@ class SyncEngine:
             try:
                 catalog[show_id] = {p.id for p in client.list_playlists(show_id)}
             except RejectedError as exc:
-                log.warning("Playlists de l'émission %s refusées par Ausha : %s", show_id, exc)
+                log.warning("Playlists de l'émission %s refusées par Ausha : %s", show_id, render(str(exc), lang="fr"))
         return catalog
 
     def _process(self, config: Config, client: AushaClient, catalog: dict[int, set[int]], ready: ReadyFile, file_hash: str) -> None:
@@ -207,7 +212,7 @@ class SyncEngine:
         title = episode_title(ready.path)
         rule = find_rule(ready.path.name, config.rules)
         if rule is None:
-            self._flag(entry, Status.SANS_REGLE, "Aucune règle ne correspond", "no_rule", title)
+            self._flag(entry, Status.SANS_REGLE, msg("err_no_rule"), "no_rule", title)
             return
         if entry.step is not Step.NONE and entry.show_id is not None and entry.show_id != rule.show_id:
             # Continuer publierait les étapes restantes dans une autre émission que l'épisode.
@@ -231,7 +236,7 @@ class SyncEngine:
         except RejectedError as exc:
             partial = isinstance(exc, PartiallyPublished)
             self.journal.update(file_hash, status=Status.REJETE, last_error=str(exc))
-            log.warning("%s : « %s » : %s", "Publication partielle" if partial else "Refusé par Ausha", title, exc)
+            log.warning("%s : « %s » : %s", "Publication partielle" if partial else "Refusé par Ausha", title, render(str(exc), lang="fr"))
             self._emit(Event("partial" if partial else "rejected", title, str(exc)))
         except TransientError as exc:
             self._record_failure(file_hash, title, str(exc))
@@ -242,9 +247,9 @@ class SyncEngine:
     def _dry_run(self, client: AushaClient, rule: Rule, entry: Entry, title: str) -> None:
         """Simulation : les mêmes lectures qu'une publication, aucune écriture sur Ausha."""
         if entry.step is Step.NONE and self._find_same_title(client, rule.show_id, title):
-            detail = "Déjà présent sur Ausha — ne serait pas publié"
+            detail = msg("dry_already_on_ausha")
         else:
-            detail = f"Serait publié dans {rule.show_name or rule.show_id}"
+            detail = msg("dry_would_publish", show=rule.show_name or rule.show_id)
         self.journal.update(entry.hash, attempts=0, last_error="")
         self._emit(Event("dry_run", title, detail))
 
@@ -276,7 +281,7 @@ class SyncEngine:
             if rule.image_path:
                 _after_publication(
                     lambda: client.upload_episode_image(episode_id, Path(rule.image_path)),
-                    "l'image n'a pas pu être ajoutée",
+                    "err_partial_image",
                 )
             self.journal.update(file_hash, step=Step.IMAGE_DONE, attempts=0)
             step = Step.IMAGE_DONE
@@ -284,7 +289,7 @@ class SyncEngine:
             if rule.playlist_id is not None:
                 _after_publication(
                     lambda: client.add_to_playlist(rule.playlist_id, episode_id),
-                    "il n'a pas pu être ajouté à la playlist",
+                    "err_partial_playlist",
                 )
             self.journal.update(file_hash, step=Step.PLAYLIST_DONE, attempts=0)
         self.journal.update(file_hash, status=Status.PUBLIE, attempts=0, last_error="")
@@ -328,11 +333,11 @@ class SyncEngine:
         attempts = (entry.attempts if entry else 0) + 1
         if attempts >= MAX_ATTEMPTS:
             self.journal.update(file_hash, status=Status.ECHEC, attempts=attempts, last_error=message)
-            log.warning("Échec de l'envoi de « %s » après %d essais : %s", title, attempts, message)
+            log.warning("Échec de l'envoi de « %s » après %d essais : %s", title, attempts, render(message, lang="fr"))
             self._emit(Event("failed", title, message))
         else:
             self.journal.update(file_hash, status=Status.EN_ATTENTE, attempts=attempts, last_error=message)
-            log.info("Envoi de « %s » à reprendre (essai %d sur %d) : %s", title, attempts, MAX_ATTEMPTS, message)
+            log.info("Envoi de « %s » à reprendre (essai %d sur %d) : %s", title, attempts, MAX_ATTEMPTS, render(message, lang="fr"))
 
     def _emit(self, event: Event) -> None:
         try:
@@ -341,12 +346,15 @@ class SyncEngine:
             log.exception("Gestionnaire d'événement en erreur")
 
 
-def _after_publication(action: Callable[[], None], failure: str) -> None:
-    """Étape qui suit la mise en ligne : un refus d'Ausha devient une publication partielle."""
+def _after_publication(action: Callable[[], None], failure_key: str) -> None:
+    """Étape qui suit la mise en ligne : un refus d'Ausha devient une publication partielle.
+
+    failure_key : clé du message (err_partial_*), qui reçoit le refus d'Ausha dans {detail}.
+    """
     try:
         action()
     except RejectedError as exc:
-        raise PartiallyPublished(f"Épisode publié, mais {failure} : {exc}") from exc
+        raise PartiallyPublished(msg(failure_key, detail=str(exc))) from exc
 
 
 def _show(rule: Rule) -> str:
@@ -364,4 +372,4 @@ def _title_key(text: str) -> str:
 
 def _folder_unreadable(folder: Path, exc: OSError) -> CycleResult:
     log.warning("Dossier illisible %s : %s", folder, exc)
-    return CycleResult("folder_missing", f"Dossier introuvable : {folder}")
+    return CycleResult("folder_missing", msg("cycle_folder_missing", folder=folder))
