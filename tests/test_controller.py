@@ -33,7 +33,7 @@ def test_shutdown_cancels_the_engine_and_stops_the_thread(qapp, tmp_path):
     journal = Journal(tmp_path / "journal.db")
     try:
         controller = AppController(tmp_path / "config.json", journal)
-        controller.shutdown()
+        assert controller.shutdown() is True
         assert controller.engine.cancel_event.is_set()
         assert controller._thread.isFinished()
         assert not controller._timer.isActive()

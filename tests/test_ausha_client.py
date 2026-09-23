@@ -279,3 +279,40 @@ def test_cancel_interrupts_rate_limit_wait(api, sleeps):
         with pytest.raises(Cancelled):
             cancellable.list_shows()
     assert sleeps == []
+
+
+def test_cancel_before_request_sends_nothing(api):
+    cancel = threading.Event()
+    cancel.set()
+    route = api.get("/shows/granted").respond(200, json={"data": []})
+    with AushaClient("t", BASE, cancel=cancel) as cancellable:
+        with pytest.raises(Cancelled):
+            cancellable.list_shows()
+    assert not route.called
+
+
+def test_cancel_stops_pagination(api):
+    cancel = threading.Event()
+
+    def first_page_then_cancel(request):
+        cancel.set()
+        return httpx.Response(200, json={"data": [{"id": 1, "name": "A"}], "meta": {"pagination": {"total_pages": 3}}})
+
+    route = api.get("/shows/granted").mock(side_effect=first_page_then_cancel)
+    with AushaClient("t", BASE, cancel=cancel) as cancellable:
+        with pytest.raises(Cancelled):
+            cancellable.list_shows()
+    assert route.call_count == 1
+
+
+def test_network_error_after_cancel_is_cancelled_not_transient(api):
+    cancel = threading.Event()
+
+    def cut(request):
+        cancel.set()
+        raise httpx.ReadError("connexion coupée")
+
+    api.get("/shows/granted").mock(side_effect=cut)
+    with AushaClient("t", BASE, cancel=cancel) as cancellable:
+        with pytest.raises(Cancelled):
+            cancellable.list_shows()

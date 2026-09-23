@@ -167,6 +167,9 @@ class AushaClient:
         file_path: Path | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> dict[str, Any]:
+        # Vérifié avant chaque requête, donc avant chaque page d'une liste.
+        if self._cancelled():
+            raise Cancelled("Envoi interrompu.")
         for attempt in range(self._max_retries + 1):
             response = self._request_once(method, url, params, data, file_path, on_progress)
             if response.status_code != 429 or attempt == self._max_retries:
@@ -177,6 +180,9 @@ class AushaClient:
             log.info("Ausha demande une pause de %.0f s", delay)
             self._wait(delay)
         return _parse(response, auth_probe=method == "GET" and url == _GRANTED_SHOWS_URL, strict=method == "GET")
+
+    def _cancelled(self) -> bool:
+        return self._cancel is not None and self._cancel.is_set()
 
     def _wait(self, delay: float) -> None:
         if self._cancel is None:
@@ -200,6 +206,8 @@ class AushaClient:
                 timeout = UPLOAD_TIMEOUT
             return self._http.request(method, url, params=params, data=data, files=files, timeout=timeout)
         except httpx.TransportError as exc:
+            if self._cancelled():  # connexion coupée par l'arrêt de l'application
+                raise Cancelled("Envoi interrompu.") from exc
             raise TransientError(f"Connexion à Ausha impossible : {exc}") from exc
         finally:
             if handle is not None:

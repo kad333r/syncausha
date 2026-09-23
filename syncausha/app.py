@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
@@ -51,6 +52,11 @@ def main(argv: list[str] | None = None) -> int:
     controller.start()
 
     code = app.exec()
-    controller.shutdown()
+    if not controller.shutdown():
+        # Détruire un QThread encore actif tue le processus (0xC0000409) : on sort sans
+        # fermer le journal, l'entrée « uploading » fera vérifier l'épisode au redémarrage.
+        log.warning("Arrêt forcé : un envoi était en cours, il reprendra au prochain démarrage")
+        logging.shutdown()
+        os._exit(code)
     journal.close()
     return code

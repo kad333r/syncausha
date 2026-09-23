@@ -202,9 +202,12 @@ class AppController(QObject):
 
         run_async(load, on_done, on_failed)
 
-    def shutdown(self) -> None:
-        """Interrompt l'envoi en cours (reprise au prochain lancement) puis arrête le thread."""
+    def shutdown(self) -> bool:
+        """Interrompt l'envoi en cours (reprise au prochain lancement) puis arrête le thread.
+
+        Renvoie False si le thread tourne encore après 15 s (réponse d'Ausha attendue).
+        """
         self.engine.cancel()
         self._timer.stop()
         self._thread.quit()
-        self._thread.wait(15000)
+        return self._thread.wait(15000)
