@@ -25,13 +25,34 @@ AppMutex={#AppMutex}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
+ShowLanguageDialog=yes
+LanguageDetectionMethod=none
 
 [Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"
+
+[CustomMessages]
+english.TaskAutostart=Start SyncAusha when Windows starts
+french.TaskAutostart=Lancer SyncAusha au démarrage de Windows
+arabic.TaskAutostart=تشغيل SyncAusha عند بدء تشغيل Windows
+english.TaskDesktopIcon=Create a desktop shortcut
+french.TaskDesktopIcon=Créer un raccourci sur le bureau
+arabic.TaskDesktopIcon=إنشاء اختصار على سطح المكتب
+english.GroupOptions=Options:
+french.GroupOptions=Options :
+arabic.GroupOptions=خيارات:
+english.RunNow=Launch SyncAusha now
+french.RunNow=Lancer SyncAusha maintenant
+arabic.RunNow=تشغيل SyncAusha الآن
+english.DeleteSettings=Also delete your SyncAusha settings, history and Ausha token?
+french.DeleteSettings=Supprimer aussi vos réglages, l'historique et le jeton Ausha de SyncAusha ?
+arabic.DeleteSettings=هل تريد أيضًا حذف إعدادات SyncAusha وسجلّها ورمز الوصول إلى Ausha؟
 
 [Tasks]
-Name: "autostart"; Description: "Lancer SyncAusha au démarrage de Windows"; GroupDescription: "Options :"
-Name: "desktopicon"; Description: "Créer un raccourci sur le bureau"; GroupDescription: "Options :"; Flags: unchecked
+Name: "autostart"; Description: "{cm:TaskAutostart}"; GroupDescription: "{cm:GroupOptions}"
+Name: "desktopicon"; Description: "{cm:TaskDesktopIcon}"; GroupDescription: "{cm:GroupOptions}"; Flags: unchecked
 
 [Files]
 Source: "..\dist\SyncAusha\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -42,9 +63,13 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExe}"" --minimized"; Tasks: autostart
+Root: HKCU; Subkey: "Software\SyncAusha"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\SyncAusha"; ValueType: string; ValueName: "Language"; ValueData: "en"; Languages: english
+Root: HKCU; Subkey: "Software\SyncAusha"; ValueType: string; ValueName: "Language"; ValueData: "fr"; Languages: french
+Root: HKCU; Subkey: "Software\SyncAusha"; ValueType: string; ValueName: "Language"; ValueData: "ar"; Languages: arabic
 
 [Run]
-Filename: "{app}\{#AppExe}"; Description: "Lancer SyncAusha maintenant"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExe}"; Description: "{cm:RunNow}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 const
@@ -101,7 +126,7 @@ begin
         RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', '{#AppName}');
         { Question posée avant la suppression des fichiers : SyncAusha.exe doit encore
           exister pour retirer le jeton du Gestionnaire d'identifiants Windows. }
-        DeleteUserData := SuppressibleMsgBox('Supprimer aussi vos réglages et l''historique SyncAusha ?',
+        DeleteUserData := SuppressibleMsgBox(CustomMessage('DeleteSettings'),
                                              mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES;
         if DeleteUserData then
           Exec(ExpandConstant('{app}\{#AppExe}'), '--forget-token', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
