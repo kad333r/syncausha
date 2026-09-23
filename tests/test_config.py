@@ -1,4 +1,5 @@
 import json
+import logging
 
 from syncausha import config as cfg
 from syncausha.config import Config, Rule, load_config, save_config
@@ -132,3 +133,11 @@ def test_language_roundtrip_and_validation(tmp_path):
     path.write_text('{"language": 3}', encoding="utf-8")
     assert load_config(path).language == ""
     assert Config().language == ""
+
+
+def test_unchosen_language_is_kept_without_warning(tmp_path, caplog):
+    path = tmp_path / "config.json"
+    save_config(Config(), path)  # language "" : pas encore choisie, écrite telle quelle
+    with caplog.at_level(logging.WARNING, logger="syncausha.config"):
+        assert load_config(path).language == ""
+    assert caplog.records == []

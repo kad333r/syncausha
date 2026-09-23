@@ -113,8 +113,9 @@ class Config:
                 else:
                     log.warning("Champ %s invalide, valeur par défaut conservée", name)
         if "language" in data:
-            if isinstance(data["language"], str) and data["language"] in LANGUAGES:
-                kwargs["language"] = data["language"]
+            language = data["language"]
+            if isinstance(language, str) and (language == "" or language in LANGUAGES):  # "" : pas encore choisie
+                kwargs["language"] = language
             else:
                 log.warning("Champ language invalide, valeur par défaut conservée")
         if "interval_minutes" in data:
