@@ -88,7 +88,8 @@ def env(tmp_path):
         image_path=str(image),
         description_template="Nouvel épisode",
     )
-    config = Config(watch_folder=str(folder), rules=[rule])
+    # Dossier déjà pris en compte : les fichiers ajoutés par les tests sont publiés.
+    config = Config(watch_folder=str(folder), baseline_folder=str(folder), rules=[rule])
     clock = SimpleNamespace(now=1_000_000.0)  # horloge commune au journal et au moteur
     journal = Journal(tmp_path / "journal.db", clock=lambda: clock.now)
     client = FakeClient()
@@ -111,6 +112,10 @@ def env(tmp_path):
     journal.close()
 
 
+class Killed(BaseException):
+    """Arrêt brutal du processus : aucune écriture ne suit."""
+
+
 def add_file(env, name, content=b"audio"):
     path = env.folder / name
     path.write_bytes(content)
@@ -124,6 +129,10 @@ def kinds(env):
 def only_entry(env):
     (entry,) = env.journal.recent() + env.journal.needing_attention()
     return entry
+
+
+def creates(env):
+    return [c[2] for c in env.client.calls if c[0] == "create"]
 
 
 def test_new_file_is_published_with_image_and_playlist(env):
@@ -561,3 +570,173 @@ def test_scan_error_gives_folder_missing(env):
 
     engine = SyncEngine(env.config, env.journal, lambda cfg, cancel: env.client, scan=broken)
     assert engine.run_cycle().state == "folder_missing"
+
+
+# --- Fichiers déjà présents au choix du dossier ---------------------------------
+
+
+def test_files_present_when_the_folder_is_chosen_are_ignored_without_calling_ausha(env):
+    env.config.baseline_folder = ""
+    add_file(env, "MARS ATTACK 12.mp3", b"12")
+    add_file(env, "interview_brut.mp3", b"interview")
+    factory_calls = []
+    engine = SyncEngine(
+        env.config, env.journal, lambda cfg, cancel: factory_calls.append(cfg) or env.client,
+        on_event=env.events.append, scan=lambda path: scan_ready_files(path, min_age_seconds=0),
+    )
+    result = engine.run_cycle()
+    assert (result.state, result.count, result.folder) == ("baseline", 2, str(env.folder))
+    assert result.message == "2 fichier(s) déjà présent(s) ignoré(s)"
+    assert factory_calls == []
+    assert env.client.reads == [] and env.client.calls == []
+    assert env.events == []
+    assert sorted(e.filename for e in env.journal.ignored()) == ["MARS ATTACK 12.mp3", "interview_brut.mp3"]
+    assert env.journal.recent() == [] and env.journal.needing_attention() == []
+
+
+def test_only_files_added_after_the_baseline_are_published(env):
+    env.config.baseline_folder = ""
+    add_file(env, "MARS ATTACK 12.mp3", b"12")
+    assert env.engine.run_cycle().state == "baseline"
+    env.config.baseline_folder = env.config.watch_folder
+    add_file(env, "MARS ATTACK 13.mp3", b"13")
+    assert env.engine.run_cycle().state == "ok"
+    env.engine.run_cycle()
+    assert creates(env) == ["MARS ATTACK 13"]
+    assert [e.filename for e in env.journal.ignored()] == ["MARS ATTACK 12.mp3"]
+
+
+def test_ignored_file_is_published_once_requested(env):
+    env.config.baseline_folder = ""
+    add_file(env, "MARS ATTACK 12.mp3", b"12")
+    env.engine.run_cycle()
+    env.config.baseline_folder = env.config.watch_folder
+    (ignored,) = env.journal.ignored()
+    env.journal.reset_for_retry(ignored.hash)  # « Publier quand même »
+    assert env.engine.run_cycle().state == "ok"
+    assert creates(env) == ["MARS ATTACK 12"]
+    assert only_entry(env).status is Status.PUBLIE
+    assert env.journal.ignored() == []
+
+
+def test_changing_the_folder_takes_a_new_baseline(env, tmp_path):
+    add_file(env, "MARS ATTACK 12.mp3", b"12")
+    env.engine.run_cycle()
+    other = tmp_path / "autre"
+    other.mkdir()
+    (other / "MARS ATTACK 12.mp3").write_bytes(b"12")  # même contenu : reste publié
+    (other / "MARS ATTACK 13.mp3").write_bytes(b"13")
+    env.config.watch_folder = str(other)
+    result = env.engine.run_cycle()
+    assert (result.state, result.count, result.folder) == ("baseline", 1, str(other))
+    assert creates(env) == ["MARS ATTACK 12"]
+    assert [e.filename for e in env.journal.ignored()] == ["MARS ATTACK 13.mp3"]
+    assert [e.status for e in env.journal.recent()] == [Status.PUBLIE]
+
+
+def test_baseline_leaves_an_upload_in_progress_alone(env):
+    # L'épisode existe peut-être déjà sur Ausha : la publication doit se terminer.
+    path = add_file(env, "MARS ATTACK 13.mp3")
+    st = path.stat()
+    file_hash = env.journal.file_hash(path, st.st_size, st.st_mtime)
+    env.journal.ensure(file_hash, path.name, st.st_size)
+    env.journal.update(file_hash, step=Step.UPLOADING, status=Status.EN_ATTENTE, show_id=1)
+    env.config.baseline_folder = ""
+    assert env.engine.run_cycle().count == 0
+    assert env.journal.get(file_hash).status is Status.EN_ATTENTE
+
+
+def test_files_still_being_copied_are_not_part_of_the_baseline(env):
+    env.config.baseline_folder = ""
+    add_file(env, "MARS ATTACK 13.mp3")
+    still_copying = SyncEngine(env.config, env.journal, lambda cfg, cancel: env.client, scan=scan_ready_files)
+    assert still_copying.run_cycle().count == 0
+    env.config.baseline_folder = env.config.watch_folder
+    env.engine.run_cycle()
+    assert creates(env) == ["MARS ATTACK 13"]
+
+
+def test_stopping_during_the_baseline(env):
+    env.config.baseline_folder = ""
+    add_file(env, "MARS ATTACK 13.mp3")
+    env.engine.cancel()
+    assert env.engine.run_cycle().state == "paused"
+    assert env.journal.ignored() == []
+
+
+# --- Robustesse de la publication ------------------------------------------------
+
+
+def test_forced_quit_after_a_long_upload_waits_from_the_end_of_the_upload(env):
+    # Envoi commencé à t0, fini à t0 + 20 min, puis processus tué avant la réponse d'Ausha.
+    t0 = env.clock.now
+
+    def on_event(event):
+        if event.kind == "progress" and event.percent == 50:
+            env.clock.now += 20 * 60
+
+    env.client.fail_after["create_episode"] = [Killed()]
+    add_file(env, "MARS ATTACK 13.mp3")
+    with pytest.raises(Killed):
+        env.make_engine(on_event).run_cycle()
+    entry = env.journal.recent()[0]
+    assert (entry.step, entry.updated_at) == (Step.UPLOADING, t0 + 20 * 60)
+    env.client.episodes[1] = []  # la recherche d'Ausha ne voit pas encore l'épisode
+    env.clock.now = t0 + 34 * 60
+    env.engine.run_cycle()
+    assert creates(env) == ["MARS ATTACK 13"]
+    env.clock.now = t0 + 35 * 60
+    env.engine.run_cycle()
+    assert creates(env) == ["MARS ATTACK 13", "MARS ATTACK 13"]
+
+
+def test_retry_does_not_restart_the_wait_after_a_lost_response(env):
+    env.client.fail_after["create_episode"] = [TransientError("délai dépassé")]
+    add_file(env, "MARS ATTACK 13.mp3")
+    env.engine.run_cycle()
+    env.client.episodes[1] = []
+    entry = only_entry(env)
+    env.journal.update(entry.hash, status=Status.ECHEC, updated_at=entry.updated_at)
+    env.clock.now += RECREATE_AFTER_SECONDS
+    env.journal.reset_for_retry(entry.hash)  # « Réessayer » 15 min après l'envoi
+    env.engine.run_cycle()
+    assert creates(env) == ["MARS ATTACK 13", "MARS ATTACK 13"]
+    assert only_entry(env).status is Status.PUBLIE
+
+
+@pytest.mark.parametrize(
+    "step,message",
+    [
+        ("upload_episode_image", "Épisode publié, mais l'image n'a pas pu être ajoutée : Refus"),
+        ("add_to_playlist", "Épisode publié, mais il n'a pas pu être ajouté à la playlist : Refus"),
+    ],
+)
+def test_refusal_after_the_episode_is_live_is_a_partial_publication(env, step, message):
+    env.client.fail[step] = [RejectedError("Refus")]
+    add_file(env, "MARS ATTACK 13.mp3")
+    assert env.engine.run_cycle().state == "attention"
+    entry = only_entry(env)
+    assert (entry.status, entry.last_error) == (Status.REJETE, message)
+    assert [(e.kind, e.detail) for e in env.events if e.kind != "progress"] == [("partial", message)]
+    env.journal.reset_for_retry(entry.hash)  # « Réessayer » reprend à l'étape refusée
+    env.engine.run_cycle()
+    assert creates(env) == ["MARS ATTACK 13"]
+    assert only_entry(env).status is Status.PUBLIE
+
+
+def test_rule_moved_to_another_show_mid_publication_is_flagged(env):
+    env.client.fail["upload_episode_image"] = [TransientError("coupure")]
+    add_file(env, "MARS ATTACK 13.mp3")
+    env.engine.run_cycle()
+    assert only_entry(env).step is Step.CREATED
+    env.client.shows[2] = "Silicon Talk"
+    env.config.rules[0] = Rule(keyword="MARS ATTACK", show_id=2, show_name="Silicon Talk")
+    env.client.calls.clear()
+    env.client.reads.clear()
+    assert env.engine.run_cycle().state == "attention"
+    entry = only_entry(env)
+    assert entry.status is Status.REGLE_CASSEE
+    assert entry.last_error == "La règle a changé d'émission pendant la publication : vérifiez l'épisode sur Ausha."
+    assert env.client.calls == []
+    assert not [r for r in env.client.reads if r[0] == "find"]
+    assert kinds(env)[-1] == "broken_rule"

@@ -32,11 +32,12 @@ STOP_MESSAGE = "Arrêt demandé"
 # d'Ausha peut mettre du temps à voir un épisode tout juste créé.
 RECREATE_AFTER_SECONDS = 15 * 60
 CHECKING_MESSAGE = "Envoi précédent en cours de vérification sur Ausha"
+SHOW_CHANGED_MESSAGE = "La règle a changé d'émission pendant la publication : vérifiez l'épisode sur Ausha."
 
 
 @dataclass(frozen=True)
 class Event:
-    """Événement par fichier : progress, published, no_rule, broken_rule, rejected, failed, dry_run."""
+    """Événement par fichier : progress, published, no_rule, broken_rule, rejected, partial, failed, dry_run."""
 
     kind: str
     title: str
@@ -46,10 +47,17 @@ class Event:
 
 @dataclass(frozen=True)
 class CycleResult:
-    """État global après un cycle : ok, attention, paused, not_configured, folder_missing, auth_error, offline."""
+    """État global après un cycle : ok, attention, paused, not_configured, folder_missing, auth_error, offline,
+    ou baseline (count fichiers déjà présents dans folder ont été ignorés, rien n'a été publié)."""
 
     state: str
     message: str = ""
+    count: int = 0
+    folder: str = ""
+
+
+class PartiallyPublished(RejectedError):
+    """Refus d'Ausha après la mise en ligne de l'épisode (image, playlist)."""
 
 
 class SyncEngine:
@@ -83,6 +91,8 @@ class SyncEngine:
         folder = Path(config.watch_folder)
         if not folder.is_dir():
             return CycleResult("folder_missing", f"Dossier introuvable : {folder}")
+        if config.watch_folder != config.baseline_folder:
+            return self._take_baseline(folder, config.watch_folder)
         try:
             client = self._client_factory(config, self.cancel_event)
         except AuthError as exc:
@@ -103,6 +113,36 @@ class SyncEngine:
             return CycleResult("offline", str(exc))
         finally:
             client.close()
+
+    def _take_baseline(self, folder: Path, watch_folder: str) -> CycleResult:
+        """Dossier tout juste choisi : ses fichiers prêts sont ignorés (statut « ignore »), sans appel à Ausha.
+
+        Un fichier encore en cours de copie n'est pas concerné : il sera publié une fois prêt.
+        Une entrée déjà envoyée (étape au-delà de « none ») non plus : son épisode existe peut-être.
+        """
+        try:
+            ready_files = self._scan(folder)
+        except OSError as exc:
+            return _folder_unreadable(folder, exc)
+        count = 0
+        for ready in ready_files:
+            if self.cancel_event.is_set():
+                return CycleResult("paused", STOP_MESSAGE)
+            if self.config.paused:
+                return CycleResult("paused")
+            try:
+                file_hash = self.journal.file_hash(ready.path, ready.size, ready.mtime)
+            except OSError as exc:
+                log.warning("Lecture impossible de %s : %s", ready.path, exc)
+                continue
+            entry = self.journal.get(file_hash)
+            if entry is not None and (entry.status in FINAL_STATUSES or entry.step is not Step.NONE):
+                continue
+            self.journal.ensure(file_hash, ready.path.name, ready.size)
+            self.journal.update(file_hash, status=Status.IGNORE, last_error="")
+            count += 1
+        log.info("Dossier %s pris en compte : %d fichier(s) déjà présent(s) ignoré(s)", folder, count)
+        return CycleResult("baseline", f"{count} fichier(s) déjà présent(s) ignoré(s)", count, watch_folder)
 
     def _run(self, config: Config, folder: Path, client: AushaClient) -> CycleResult:
         try:
@@ -169,6 +209,10 @@ class SyncEngine:
         if rule is None:
             self._flag(entry, Status.SANS_REGLE, "Aucune règle ne correspond", "no_rule", title)
             return
+        if entry.step is not Step.NONE and entry.show_id is not None and entry.show_id != rule.show_id:
+            # Continuer publierait les étapes restantes dans une autre émission que l'épisode.
+            self._flag(entry, Status.REGLE_CASSEE, SHOW_CHANGED_MESSAGE, "broken_rule", title)
+            return
         problem = validate_rule(rule, catalog)
         if problem:
             self._flag(entry, Status.REGLE_CASSEE, problem, "broken_rule", title)
@@ -185,8 +229,10 @@ class SyncEngine:
         try:
             action()
         except RejectedError as exc:
+            partial = isinstance(exc, PartiallyPublished)
             self.journal.update(file_hash, status=Status.REJETE, last_error=str(exc))
-            self._emit(Event("rejected", title, str(exc)))
+            log.warning("%s : « %s » : %s", "Publication partielle" if partial else "Refusé par Ausha", title, exc)
+            self._emit(Event("partial" if partial else "rejected", title, str(exc)))
         except TransientError as exc:
             self._record_failure(file_hash, title, str(exc))
         except (AuthError, Cancelled):
@@ -209,6 +255,7 @@ class SyncEngine:
             existing = self._find_same_title(client, rule.show_id, title)
             if existing is not None and step is Step.NONE:
                 self.journal.update(file_hash, status=Status.DEJA_PRESENT)
+                log.info("Déjà présent sur Ausha, non publié : « %s » (%s, épisode %s)", title, _show(rule), existing.id)
                 return
             if existing is not None:
                 # La réponse à la création s'était perdue : l'épisode existe, on le reprend.
@@ -227,29 +274,38 @@ class SyncEngine:
             step = Step.CREATED
         if step is Step.CREATED:
             if rule.image_path:
-                client.upload_episode_image(episode_id, Path(rule.image_path))
+                _after_publication(
+                    lambda: client.upload_episode_image(episode_id, Path(rule.image_path)),
+                    "l'image n'a pas pu être ajoutée",
+                )
             self.journal.update(file_hash, step=Step.IMAGE_DONE, attempts=0)
             step = Step.IMAGE_DONE
         if step is Step.IMAGE_DONE:
             if rule.playlist_id is not None:
-                client.add_to_playlist(rule.playlist_id, episode_id)
+                _after_publication(
+                    lambda: client.add_to_playlist(rule.playlist_id, episode_id),
+                    "il n'a pas pu être ajouté à la playlist",
+                )
             self.journal.update(file_hash, step=Step.PLAYLIST_DONE, attempts=0)
         self.journal.update(file_hash, status=Status.PUBLIE, attempts=0, last_error="")
+        log.info("Publié : « %s » dans %s (épisode %s)", title, _show(rule), episode_id)
         self._emit(Event("published", title, rule.show_name))
 
     def _create(self, client: AushaClient, rule: Rule, ready: ReadyFile, entry: Entry, title: str) -> int:
         """Envoie l'épisode. L'étape « uploading » est notée avant : si la réponse se perd,
         le cycle suivant cherche l'épisode sur Ausha au lieu de le recréer."""
         file_hash = entry.hash
+
+        def on_progress(percent: int) -> None:
+            if percent >= 100:
+                # Fichier entièrement envoyé : l'attente avant une recréation part de maintenant,
+                # pas du début d'un long envoi (arrêt forcé en attendant la réponse d'Ausha).
+                self.journal.update(file_hash, step=Step.UPLOADING)
+            self._emit(Event("progress", title, percent=percent))
+
         self.journal.update(file_hash, step=Step.UPLOADING)
         try:
-            return client.create_episode(
-                rule.show_id,
-                title,
-                episode_description(rule),
-                ready.path,
-                on_progress=lambda percent: self._emit(Event("progress", title, percent=percent)),
-            )
+            return client.create_episode(rule.show_id, title, episode_description(rule), ready.path, on_progress=on_progress)
         except RejectedError:
             # Refusé : rien n'a été créé par cet appel. Après une réponse perdue, l'épisode
             # d'un envoi précédent existe peut-être encore : on garde alors « uploading ».
@@ -272,15 +328,29 @@ class SyncEngine:
         attempts = (entry.attempts if entry else 0) + 1
         if attempts >= MAX_ATTEMPTS:
             self.journal.update(file_hash, status=Status.ECHEC, attempts=attempts, last_error=message)
+            log.warning("Échec de l'envoi de « %s » après %d essais : %s", title, attempts, message)
             self._emit(Event("failed", title, message))
         else:
             self.journal.update(file_hash, status=Status.EN_ATTENTE, attempts=attempts, last_error=message)
+            log.info("Envoi de « %s » à reprendre (essai %d sur %d) : %s", title, attempts, MAX_ATTEMPTS, message)
 
     def _emit(self, event: Event) -> None:
         try:
             self._on_event(event)
         except Exception:
             log.exception("Gestionnaire d'événement en erreur")
+
+
+def _after_publication(action: Callable[[], None], failure: str) -> None:
+    """Étape qui suit la mise en ligne : un refus d'Ausha devient une publication partielle."""
+    try:
+        action()
+    except RejectedError as exc:
+        raise PartiallyPublished(f"Épisode publié, mais {failure} : {exc}") from exc
+
+
+def _show(rule: Rule) -> str:
+    return rule.show_name or f"émission {rule.show_id}"
 
 
 def _same_title(a: str, b: str) -> bool:
