@@ -1,5 +1,6 @@
 import os
 import time
+from pathlib import Path
 
 import pytest
 
@@ -50,3 +51,36 @@ def test_ignores_locked_files(tmp_path, monkeypatch):
 def test_missing_folder_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         scan_ready_files(tmp_path / "absent")
+
+
+def test_ignores_empty_files(tmp_path):
+    touch(tmp_path / "empty.mp3", content=b"")
+    assert scan_ready_files(tmp_path) == []
+
+
+def test_ignores_hidden_and_temp_names(tmp_path):
+    touch(tmp_path / "._x.mp3")
+    touch(tmp_path / "~$x.mp3")
+    assert scan_ready_files(tmp_path) == []
+
+
+def test_future_mtime_is_ready(tmp_path):
+    touch(tmp_path / "future.mp3", age_seconds=-3600)
+    result = scan_ready_files(tmp_path)
+    assert [f.path.name for f in result] == ["future.mp3"]
+
+
+def test_skips_file_that_vanishes_before_stat(tmp_path, monkeypatch):
+    touch(tmp_path / "a.mp3")
+    gone = touch(tmp_path / "gone.mp3")
+
+    real_stat = Path.stat
+
+    def flaky_stat(self, *args, **kwargs):
+        if self == gone:
+            raise FileNotFoundError()
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", flaky_stat)
+    result = scan_ready_files(tmp_path)
+    assert [f.path.name for f in result] == ["a.mp3"]
