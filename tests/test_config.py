@@ -121,3 +121,14 @@ def test_token_roundtrip(monkeypatch):
     assert all(len(store[key]) <= 1000 for key in chunk_keys)
     cfg.set_token("")
     assert store == {}
+
+
+def test_language_roundtrip_and_validation(tmp_path):
+    path = tmp_path / "config.json"
+    save_config(Config(language="ar"), path)
+    assert load_config(path).language == "ar"
+    path.write_text('{"language": "de"}', encoding="utf-8")
+    assert load_config(path).language == ""
+    path.write_text('{"language": 3}', encoding="utf-8")
+    assert load_config(path).language == ""
+    assert Config().language == ""

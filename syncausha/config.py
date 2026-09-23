@@ -12,6 +12,8 @@ from pathlib import Path
 import keyring
 from keyring.errors import PasswordDeleteError
 
+from syncausha.i18n import LANGUAGES
+
 log = logging.getLogger(__name__)
 
 APP_NAME = "SyncAusha"
@@ -85,6 +87,7 @@ class Config:
     # Dossier dont les fichiers déjà présents ont été ignorés : différent de watch_folder, le
     # prochain cycle fait cet état des lieux au lieu de publier.
     baseline_folder: str = ""
+    language: str = ""  # "" = non choisi (installateur puis anglais)
     interval_minutes: int = 15
     paused: bool = False
     dry_run: bool = False
@@ -109,6 +112,11 @@ class Config:
                     kwargs[name] = data[name]
                 else:
                     log.warning("Champ %s invalide, valeur par défaut conservée", name)
+        if "language" in data:
+            if isinstance(data["language"], str) and data["language"] in LANGUAGES:
+                kwargs["language"] = data["language"]
+            else:
+                log.warning("Champ language invalide, valeur par défaut conservée")
         if "interval_minutes" in data:
             if _is_int(data["interval_minutes"]):
                 kwargs["interval_minutes"] = data["interval_minutes"]
