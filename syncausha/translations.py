@@ -484,6 +484,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Réglages",
         "ar": "الإعدادات",
     },
+    "settings_language": {
+        "en": "Language",
+        "fr": "Langue",
+        "ar": "اللغة",
+    },
     "settings_field_token": {
         "en": "Ausha token",
         "fr": "Jeton Ausha",

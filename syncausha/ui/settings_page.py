@@ -1,32 +1,37 @@
-"""Page Réglages : jeton, dossier, intervalle, démarrage, pause, essai à blanc."""
+"""Page Réglages : langue, jeton, dossier, intervalle, démarrage, pause, essai à blanc."""
 from __future__ import annotations
 
 import os
 from dataclasses import replace
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFormLayout,
     QFrame,
     QHBoxLayout,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from syncausha import autostart
+from syncausha import autostart, i18n
 from syncausha.config import MAX_INTERVAL, MIN_INTERVAL, app_data_dir
-from syncausha.i18n import render, tr
+from syncausha.i18n import LANGUAGES, msg, render, tr
 from syncausha.ui.controller import AppController, Catalog
 from syncausha.ui.widgets import make_label, set_tone
 
 
 class SettingsPage(QWidget):
+    # Émis après un enregistrement qui change la langue : la fenêtre se reconstruit (et détruit cette page).
+    language_changed = Signal(str)
+
     def __init__(self, controller: AppController) -> None:
         super().__init__()
         self.controller = controller
@@ -40,6 +45,13 @@ class SettingsPage(QWidget):
         form.setContentsMargins(16, 16, 16, 16)
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(12)
+
+        self.language = QComboBox()
+        for code, name in LANGUAGES.items():  # chaque langue écrite dans sa propre langue
+            self.language.addItem(name, code)
+        self.language.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.language.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        form.addRow(tr("settings_language"), self.language)
 
         self.token = QLineEdit()
         self.token.setEchoMode(QLineEdit.EchoMode.Password)
@@ -85,6 +97,7 @@ class SettingsPage(QWidget):
         actions.addWidget(logs_button)
         actions.addStretch(1)
         self.saved_label = make_label(object_name="muted")
+        self.saved_message = ""  # résultat du dernier enregistrement (msg), repris si la fenêtre est reconstruite
         actions.addWidget(self.saved_label)
         save_button = QPushButton(tr("common_save"))
         save_button.setObjectName("primary")
@@ -101,6 +114,7 @@ class SettingsPage(QWidget):
 
     def load(self) -> None:
         config = self.controller.config
+        self.language.setCurrentIndex(self.language.findData(i18n.current_language()))
         self.token.clear()
         self.token.setPlaceholderText(
             tr("settings_token_saved_placeholder") if self.controller.has_token() else tr("settings_token_placeholder")
@@ -111,8 +125,13 @@ class SettingsPage(QWidget):
         self.paused.setChecked(config.paused)
         self._saved_paused = config.paused
         self.dry_run.setChecked(config.dry_run)
-        self.saved_label.clear()
+        self.show_saved("")
         self._show_test_result(tr("settings_token_hint"))
+
+    def show_saved(self, message: str) -> None:
+        """Résultat d'un enregistrement : message produit par msg, traduit à l'affichage."""
+        self.saved_message = message
+        self.saved_label.setText(render(message))
 
     def _follow_pause(self, _state: str, _message: str) -> None:
         """Pause changée ailleurs (icône) : seule cette case suit, les autres saisies sont gardées."""
@@ -147,27 +166,31 @@ class SettingsPage(QWidget):
             try:
                 self.controller.update_token(token)
             except Exception as exc:  # Gestionnaire d'identifiants indisponible ou refus
-                self.saved_label.setText(tr("settings_token_not_saved", detail=render(str(exc))))
+                self.show_saved(msg("settings_token_not_saved", detail=exc))
                 return
+        language = self.language.currentData()
         config = replace(
             self.controller.config,
+            language=language,
             watch_folder=self.folder.text(),
             interval_minutes=self.interval.value(),
             paused=self.paused.isChecked(),
             dry_run=self.dry_run.isChecked(),
         )
         if not self.controller.update_config(config):
-            self.saved_label.setText(tr("settings_not_saved"))
+            self.show_saved(msg("settings_not_saved"))
             return
-        message = tr("settings_saved")
+        message = msg("settings_saved")
         try:
             autostart.set_enabled(self.autostart.isChecked())
         except OSError as exc:  # registre verrouillé par une stratégie ou un antivirus
-            message = tr("settings_autostart_failed", detail=exc)
+            message = msg("settings_autostart_failed", detail=exc)
         self.load()
-        self.saved_label.setText(message)
+        self.show_saved(message)
         if not config.paused:
             self.controller.sync_now()
+        if language != i18n.current_language():  # en dernier : tout est enregistré avant la reconstruction
+            self.language_changed.emit(language)
 
     def _open_logs(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(app_data_dir() / "logs")))

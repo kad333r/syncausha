@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import shiboken6
 from PySide6.QtCore import QCoreApplication, QObject, QThreadPool, Signal, Slot
 
 
@@ -33,6 +34,9 @@ class _Signals(QObject):
 
     def _finish(self, callback: Callable[[Any], None], value: Any) -> None:
         try:
+            owner = getattr(callback, "__self__", None)
+            if isinstance(owner, QObject) and not shiboken6.isValid(owner):
+                return  # page détruite entre-temps (fenêtre reconstruite au changement de langue)
             callback(value)
         finally:
             self.deleteLater()

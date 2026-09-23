@@ -18,14 +18,15 @@ class Tray(QSystemTrayIcon):
         self.controller = controller
         self.window = window
         self._menu = QMenu()
-        self.sync_action = self._menu.addAction(tr("tray_sync_now"))
+        # Textes posés par retranslate(), ici et à chaque changement de langue.
+        self.sync_action = self._menu.addAction("")
         self.sync_action.triggered.connect(controller.sync_now)
-        self.pause_action = self._menu.addAction(tr("tray_pause"))
+        self.pause_action = self._menu.addAction("")
         self.pause_action.triggered.connect(self._toggle_pause)
-        self.open_folder_action = self._menu.addAction(tr("tray_open_folder"))
+        self.open_folder_action = self._menu.addAction("")
         self.open_folder_action.triggered.connect(self._open_folder)
         self._menu.addSeparator()
-        self.quit_action = self._menu.addAction(tr("tray_quit"))
+        self.quit_action = self._menu.addAction("")
         self.quit_action.triggered.connect(QApplication.quit)
         self.setContextMenu(self._menu)
 
@@ -33,7 +34,15 @@ class Tray(QSystemTrayIcon):
         self.messageClicked.connect(window.show_and_raise)
         controller.state_changed.connect(self._update)
         controller.notification.connect(self._notify)
-        self._update(controller.state, controller.message)
+        window.language_changed.connect(self.retranslate)
+        self.retranslate()
+
+    def retranslate(self) -> None:
+        """Menu et info-bulle dans la langue active."""
+        self.sync_action.setText(tr("tray_sync_now"))
+        self.open_folder_action.setText(tr("tray_open_folder"))
+        self.quit_action.setText(tr("tray_quit"))
+        self._update(self.controller.state, self.controller.message)  # info-bulle et Pause/Reprendre
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.Trigger:

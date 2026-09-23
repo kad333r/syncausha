@@ -9,15 +9,16 @@ import logging
 import os
 import sys
 
-from PySide6.QtCore import QLibraryInfo, QTranslator
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from syncausha import __version__
 from syncausha.config import app_data_dir, set_token
+from syncausha.i18n import resolve_language
 from syncausha.journal import open_journal
 from syncausha.logging_setup import setup_logging
 from syncausha.ui.controller import AppController
 from syncausha.ui.icons import app_icon
+from syncausha.ui.language import apply_language
 from syncausha.ui.main_window import MainWindow
 from syncausha.ui.single_instance import SingleInstance
 from syncausha.ui.style import apply_style, watch_color_scheme
@@ -41,7 +42,6 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationVersion(__version__)
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(app_icon())
-    _install_qt_translation(app)
 
     data_dir = app_data_dir()
     setup_logging(data_dir / "logs")
@@ -56,6 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     watch_color_scheme(app)
     journal = open_journal(data_dir / "journal.db")
     controller = AppController(data_dir / "config.json", journal)
+    language = resolve_language(controller.config.language)  # réglages, puis installateur, puis anglais
+    apply_language(app, language)
+    log.info("Langue de l'interface : %s", language)
     window = MainWindow(controller)
     tray = Tray(controller, window)
     if QSystemTrayIcon.isSystemTrayAvailable():
@@ -85,13 +88,6 @@ def _forget_token() -> int:
     except Exception:  # Gestionnaire d'identifiants indisponible : la désinstallation continue
         return 1
     return 0
-
-
-def _install_qt_translation(app: QApplication) -> None:
-    """Boutons des dialogues standard de Qt (Oui, Non, Annuler…) en français, si la traduction est là."""
-    translator = QTranslator(app)
-    if translator.load("qtbase_fr", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
-        app.installTranslator(translator)
 
 
 def _create_mutex(name: str) -> int | None:
