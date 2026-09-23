@@ -3,7 +3,7 @@ import itertools
 import pytest
 
 import syncausha.journal as journal_module
-from syncausha.journal import Journal, Status, Step
+from syncausha.journal import Journal, Status, Step, open_journal
 
 
 @pytest.fixture
@@ -88,6 +88,13 @@ def test_forget_unresolved_keeps_created_and_published(journal):
     assert journal.get("present") is not None
 
 
+def test_forget_unresolved_keeps_entries_matching_present_filename(journal):
+    journal.ensure("h1", "still_on_disk.mp3", 1)
+    journal.update("h1", status=Status.ECHEC)
+    journal.forget_unresolved(keep=set(), present_filenames={"still_on_disk.mp3"})
+    assert journal.get("h1") is not None
+
+
 def test_persists_across_instances(tmp_path):
     first = Journal(tmp_path / "j.db")
     first.ensure("h", "a.mp3", 1)
@@ -96,3 +103,23 @@ def test_persists_across_instances(tmp_path):
     second = Journal(tmp_path / "j.db")
     assert second.get("h").status is Status.PUBLIE
     second.close()
+
+
+def test_sets_user_version_on_creation(tmp_path):
+    j = Journal(tmp_path / "j.db")
+    version = j._db.execute("PRAGMA user_version").fetchone()[0]
+    j.close()
+    assert version == 1
+
+
+def test_open_journal_quarantines_corrupt_file_and_starts_fresh(tmp_path):
+    path = tmp_path / "journal.db"
+    path.write_bytes(b"pas une base sqlite valide")
+    j = open_journal(path)
+    try:
+        entry = j.ensure("h1", "a.mp3", 1)
+        assert entry.status is Status.EN_ATTENTE
+        assert j.get("h1") is entry or j.get("h1") == entry
+    finally:
+        j.close()
+    assert (tmp_path / "journal.db.corrompu").exists()

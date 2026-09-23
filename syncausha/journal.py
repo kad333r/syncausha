@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import os
 import sqlite3
 import threading
 import time
@@ -9,6 +11,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 class Status(StrEnum):
@@ -83,7 +87,15 @@ class Journal:
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(path), check_same_thread=False)
         with self._lock:
-            self._db.executescript(_SCHEMA)
+            try:
+                self._db.executescript(_SCHEMA)
+            except Exception:
+                # Referme la connexion pour ne pas garder le fichier verrouillé sous Windows.
+                self._db.close()
+                raise
+            if self._db.execute("PRAGMA user_version").fetchone()[0] == 0:
+                self._db.execute("PRAGMA user_version = 1")
+                self._db.commit()
 
     def close(self) -> None:
         with self._lock:
@@ -138,13 +150,20 @@ class Journal:
     def needing_attention(self) -> list[Entry]:
         return self._select(f"status IN ({_placeholders()})", ATTENTION_STATUSES, -1)
 
-    def forget_unresolved(self, keep: set[str]) -> None:
-        """Oublie les fichiers disparus du dossier qui n'ont jamais donné d'épisode."""
+    def forget_unresolved(self, keep: set[str], present_filenames: set[str] = frozenset()) -> None:
+        """Oublie les fichiers disparus du dossier qui n'ont jamais donné d'épisode.
+
+        Seules les entrées à l'étape « none » et dont le statut n'est ni publié ni déjà présent
+        sont concernées, et seulement si leur hash n'est pas dans keep ET que leur nom de fichier
+        n'est pas dans present_filenames (un fichier retrouvé sous le même nom, même modifié,
+        n'est donc pas oublié à tort).
+        """
         with self._lock, self._db:
             rows = self._db.execute(
-                "SELECT hash FROM files WHERE step = 'none' AND status NOT IN ('publie', 'deja_present')"
+                "SELECT hash, filename FROM files WHERE step = ? AND status NOT IN (?, ?)",
+                (Step.NONE, Status.PUBLIE, Status.DEJA_PRESENT),
             ).fetchall()
-            stale = [(h,) for (h,) in rows if h not in keep]
+            stale = [(h,) for (h, filename) in rows if h not in keep and filename not in present_filenames]
             self._db.executemany("DELETE FROM files WHERE hash = ?", stale)
 
     def _select(self, where: str, params: tuple, limit: int) -> list[Entry]:
@@ -152,6 +171,20 @@ class Journal:
         with self._lock:
             rows = self._db.execute(query, (*(str(p) for p in params), limit)).fetchall()
         return [_to_entry(row) for row in rows]
+
+
+def open_journal(path: Path) -> Journal:
+    """Ouvre le journal ; si le fichier est corrompu, le met de côté (journal.db.corrompu)
+    et repart d'un journal neuf plutôt que de planter au démarrage."""
+    try:
+        return Journal(path)
+    except sqlite3.DatabaseError as exc:
+        log.warning("Journal illisible (%s), il est mis de côté", exc)
+        try:
+            os.replace(path, path.with_name(path.name + ".corrompu"))
+        except OSError:
+            pass
+        return Journal(path)
 
 
 def _placeholders() -> str:
