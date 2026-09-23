@@ -1,4 +1,4 @@
-"""Page Activité : état, fichiers à traiter, historique récent."""
+"""Page Activité : état, fichiers à traiter, historique récent, fichiers ignorés."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -16,6 +16,7 @@ from syncausha.ui.widgets import Row, clear_layout, make_label, pill, section_la
 STATE_TEXT = {
     "ok": "À jour",
     "syncing": "Synchronisation…",
+    "baseline": "Analyse du dossier…",
     "attention": "Des fichiers demandent votre attention",
     "paused": "En pause",
     "not_configured": "Configuration incomplète",
@@ -24,9 +25,10 @@ STATE_TEXT = {
     "offline": "Ausha injoignable",
 }
 STATE_COLOR = {
-    "ok": "success", "syncing": "info", "attention": "warning", "paused": "muted",
+    "ok": "success", "syncing": "info", "baseline": "info", "attention": "warning", "paused": "muted",
     "not_configured": "warning", "folder_missing": "warning", "auth_error": "danger", "offline": "danger",
 }
+MAX_IGNORED_ROWS = 20
 
 
 class ActivityPage(QWidget):
@@ -86,6 +88,13 @@ class ActivityPage(QWidget):
             self.sections.addWidget(make_label("Aucun épisode publié pour l'instant.", "muted"))
         for entry in recent:
             self.sections.addWidget(self._recent_row(entry))
+        ignored = self.controller.journal.ignored(limit=-1)
+        if ignored:
+            self.sections.addWidget(section_label("Ignorés — déjà présents au choix du dossier"))
+            for entry in ignored[:MAX_IGNORED_ROWS]:
+                self.sections.addWidget(self._ignored_row(entry))
+            if len(ignored) > MAX_IGNORED_ROWS:
+                self.sections.addWidget(make_label(f"… et {len(ignored) - MAX_IGNORED_ROWS} autres", "muted"))
         self.sections.addStretch(1)
 
     def _update_header(self) -> None:
@@ -95,6 +104,8 @@ class ActivityPage(QWidget):
         parts = [c.config.watch_folder or "Aucun dossier choisi"]
         if c.busy:
             parts.append("synchronisation en cours")
+        elif c.auth_blocked:
+            parts.append("synchro automatique suspendue (jeton invalide)")
         elif not c.config.paused:
             parts.append(f"prochain passage dans {max(1, round(c.seconds_until_next_cycle() / 60))} min")
         if c.message and c.state not in ("ok", "syncing"):
@@ -113,6 +124,11 @@ class ActivityPage(QWidget):
             button = QPushButton("Réessayer")
             button.clicked.connect(lambda _=False, h=entry.hash: self.controller.retry(h))
         return Row(entry.filename, entry.last_error or "Aucune règle ne correspond", button)
+
+    def _ignored_row(self, entry: Entry) -> Row:
+        button = QPushButton("Publier quand même")
+        button.clicked.connect(lambda _=False, h=entry.hash: self.controller.publish_anyway(h))
+        return Row(entry.filename, "Présent avant le choix du dossier", button)
 
     def _recent_row(self, entry: Entry) -> Row:
         when = datetime.fromtimestamp(entry.updated_at).strftime("%d/%m %H:%M")

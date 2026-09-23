@@ -10,6 +10,7 @@ ASSETS = Path(__file__).resolve().parent.parent / "assets"
 STATE_COLORS = {
     "ok": "#2E9E4F",
     "syncing": "#2F6FDB",
+    "baseline": "#2F6FDB",
     "attention": "#E39B17",
     "not_configured": "#E39B17",
     "folder_missing": "#E39B17",

@@ -86,6 +86,7 @@ class SettingsPage(QWidget):
         actions.addWidget(save_button)
         layout.addLayout(actions)
         layout.addStretch(1)
+        controller.state_changed.connect(self._follow_pause)
         self.load()
 
     def showEvent(self, event) -> None:
@@ -106,6 +107,10 @@ class SettingsPage(QWidget):
         self.paused.setChecked(config.paused)
         self.dry_run.setChecked(config.dry_run)
         self.saved_label.clear()
+
+    def _follow_pause(self, _state: str, _message: str) -> None:
+        """Pause changée ailleurs (icône) : seule cette case suit, les autres saisies sont gardées."""
+        self.paused.setChecked(self.controller.config.paused)
 
     def _choose_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Dossier des podcasts", self.folder.text())
@@ -138,7 +143,9 @@ class SettingsPage(QWidget):
             paused=self.paused.isChecked(),
             dry_run=self.dry_run.isChecked(),
         )
-        self.controller.update_config(config)
+        if not self.controller.update_config(config):
+            self.saved_label.setText("Réglages non enregistrés")
+            return
         message = "Réglages enregistrés"
         try:
             autostart.set_enabled(self.autostart.isChecked())

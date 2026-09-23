@@ -261,9 +261,12 @@ class RulesPage(QWidget):
         else:
             rules[self._editing_index] = rule
             index = self._editing_index
-        self.controller.update_config(replace(self.controller.config, rules=rules))
+        if not self.controller.update_config(replace(self.controller.config, rules=rules)):
+            self.form_error.setText("Règle non enregistrée.")
+            return
         self._render_list()
         self.list.setCurrentRow(index)
+        self._sync_now()
 
     def _delete(self) -> None:
         if self._editing_index is None:
@@ -273,9 +276,16 @@ class RulesPage(QWidget):
             return
         rules = list(self.controller.config.rules)
         del rules[self._editing_index]
-        self.controller.update_config(replace(self.controller.config, rules=rules))
+        if not self.controller.update_config(replace(self.controller.config, rules=rules)):
+            return
         self._render_list()
         self.start_new_rule("")
+        self._sync_now()
+
+    def _sync_now(self) -> None:
+        """Applique tout de suite les règles modifiées (un fichier « sans règle » part sans attendre)."""
+        if not self.controller.config.paused:
+            self.controller.sync_now()
 
 
 def _thumbnail(path: str) -> QIcon:
