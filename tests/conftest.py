@@ -14,6 +14,24 @@ def qapp():
     return QApplication.instance() or QApplication([])
 
 
+@pytest.fixture(autouse=True)
+def default_language():
+    """Chaque test démarre en anglais (langue par défaut) et y revient à la fin."""
+    from syncausha import i18n
+
+    i18n.set_language(i18n.DEFAULT_LANGUAGE)
+    yield
+    i18n.set_language(i18n.DEFAULT_LANGUAGE)
+
+
+@pytest.fixture
+def french(default_language):
+    """Interface en français le temps du test (textes comparés à la lettre) ; retour à l'anglais ensuite."""
+    from syncausha import i18n
+
+    i18n.set_language("fr")
+
+
 @pytest.fixture
 def wait_until(qapp):
     """Fait tourner la boucle d'événements jusqu'à ce que condition() soit vraie (2 s au plus)."""

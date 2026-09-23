@@ -3,9 +3,10 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton
 
-from syncausha import autostart
+from syncausha import autostart, i18n
 from syncausha.ausha_client import Show
 from syncausha.config import Config, Rule, save_config
+from syncausha.i18n import msg, tr
 from syncausha.journal import Journal, Status
 from syncausha.ui import controller as controller_module
 from syncausha.ui import rules_page as rules_page_module
@@ -14,7 +15,7 @@ from syncausha.ui.activity_page import ActivityPage
 from syncausha.ui.controller import AppController
 from syncausha.ui.main_window import ACTIVITY, MainWindow
 from syncausha.ui.rules_page import RulesPage
-from syncausha.ui.settings_page import TOKEN_HINT, SettingsPage
+from syncausha.ui.settings_page import SettingsPage
 from syncausha.ui.tray import Tray
 
 
@@ -47,7 +48,7 @@ def test_main_window_builds_and_navigates(qapp, tmp_path, monkeypatch):
         journal.close()
 
 
-def test_settings_are_saved_even_if_autostart_cannot_be_changed(qapp, tmp_path, monkeypatch):
+def test_settings_are_saved_even_if_autostart_cannot_be_changed(qapp, tmp_path, monkeypatch, french):
     def denied(enabled):
         raise PermissionError(13, "Accès refusé")
 
@@ -90,7 +91,7 @@ def texts(widget, kind):
     return [child.text() for child in widget.findChildren(kind)]
 
 
-def test_activity_lists_files_ignored_when_the_folder_was_chosen(controller, syncs):
+def test_activity_lists_files_ignored_when_the_folder_was_chosen(controller, syncs, french):
     for i in range(25):
         controller.journal.ensure(f"h{i}", f"Ancien épisode {i}.mp3", 1)
         controller.journal.update(f"h{i}", status=Status.IGNORE)
@@ -105,7 +106,7 @@ def test_activity_lists_files_ignored_when_the_folder_was_chosen(controller, syn
     assert syncs == [True]
 
 
-def test_activity_header_when_the_token_is_refused(controller):
+def test_activity_header_when_the_token_is_refused(controller, french):
     page = ActivityPage(controller)
     assert "prochain passage dans" in page.detail_label.text()
     controller.auth_blocked = True
@@ -114,7 +115,7 @@ def test_activity_header_when_the_token_is_refused(controller):
     assert "prochain passage" not in page.detail_label.text()
 
 
-def test_pause_checkbox_and_tray_follow_the_controller(controller, syncs):
+def test_pause_checkbox_and_tray_follow_the_controller(controller, syncs, french):
     window = MainWindow(controller)
     tray = Tray(controller, window)
     page = window.settings
@@ -131,7 +132,7 @@ def test_pause_checkbox_and_tray_follow_the_controller(controller, syncs):
     assert page.paused.isChecked()
 
 
-def test_settings_page_reports_settings_that_cannot_be_saved(controller, syncs, monkeypatch):
+def test_settings_page_reports_settings_that_cannot_be_saved(controller, syncs, monkeypatch, french):
     def denied(config, path):
         raise PermissionError(13, "Accès refusé")
 
@@ -171,14 +172,40 @@ def test_activity_refresh_hides_the_previous_rows_at_once(controller):
     assert visible.count("interview_brut.mp3") == 1
 
 
-def test_token_test_result_replaces_the_hint(controller):
+def test_activity_shows_core_messages_in_the_current_language(controller):
+    controller.journal.ensure("h1", "MARS ATTACK 13.mp3", 1)
+    stored_error = msg("rule_err_show_missing", show="Mars Attack")
+    controller.journal.update("h1", status=Status.REGLE_CASSEE, last_error=stored_error)
+    controller.dry_run_lines = [msg("dry_line", title="MARS ATTACK 14", detail=msg("dry_would_publish", show="Mars Attack"))]
+    controller.state, controller.message = "attention", msg("cycle_files_need_attention", n=1)
+    page = ActivityPage(controller)
+    assert "Show not found on Ausha: Mars Attack" in texts(page, QLabel)
+    assert "MARS ATTACK 14 — Would be published to Mars Attack" in texts(page, QLabel)
+    assert "Some files need your attention" in page.status_label.text()
+    assert page.detail_label.text().endswith("Files needing attention: 1")
+    i18n.set_language("ar")
+    page.refresh()
+    assert tr("rule_err_show_missing", show="Mars Attack") in texts(page, QLabel)
+    assert tr("state_attention") in page.status_label.text()
+    assert page.detail_label.text().endswith(tr("cycle_files_need_attention", n=1))
+
+
+def test_tray_texts_follow_the_state(controller, syncs):
+    tray = Tray(controller, MainWindow(controller))
+    assert tray.toolTip() == "SyncAusha — Setup incomplete"  # jeton présent, aucun dossier
+    controller.set_paused(True)
+    assert tray.toolTip() == "SyncAusha — Paused"
+    assert tray.pause_action.text() == "Resume sync"
+
+
+def test_token_test_result_replaces_the_hint(controller, french):
     page = SettingsPage(controller)
-    assert page.test_result.text() == TOKEN_HINT
+    assert page.test_result.text() == tr("settings_token_hint")
     page._on_test_failed(Exception("jeton refusé"))
     assert page.test_result.text() == "Échec : jeton refusé"
     assert page.test_result.objectName() == "error"
     page.load()
-    assert page.test_result.text() == TOKEN_HINT
+    assert page.test_result.text() == tr("settings_token_hint")
     assert page.test_result.objectName() == "muted"
 
 

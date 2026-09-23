@@ -6,6 +6,7 @@ import pytest
 import syncausha.ui.controller as controller_module
 from syncausha.ausha_client import Playlist, RejectedError, Show
 from syncausha.config import Config, load_config, save_config
+from syncausha.i18n import msg
 from syncausha.journal import Journal, Status
 from syncausha.sync_engine import CycleResult, Event
 from syncausha.ui.controller import AppController
@@ -114,7 +115,7 @@ def test_initial_state(qapp, tmp_path, monkeypatch, token, folder, paused, atten
         journal.close()
 
 
-def test_baseline_saves_the_folder_notifies_and_runs_the_real_cycle(controller, messages, syncs):
+def test_baseline_saves_the_folder_notifies_and_runs_the_real_cycle(controller, messages, syncs, french):
     controller.update_config(replace(controller.config, watch_folder="D:/Podcasts"))
     controller._on_cycle_finished(
         CycleResult("baseline", "3 fichier(s) déjà présent(s) ignoré(s)", count=3, folder="D:/Podcasts")
@@ -152,12 +153,35 @@ def test_publish_anyway(controller, syncs):
     assert syncs == [True]
 
 
-def test_partial_publication_is_notified(controller, messages):
+def test_partial_publication_is_notified(controller, messages, french):
     controller._on_engine_event(Event("partial", "MARS ATTACK 13", "Épisode publié, mais …"))
     assert messages == [("Publié avec un problème", "MARS ATTACK 13 : Épisode publié, mais …")]
 
 
-def test_files_without_rule_are_notified_once_per_cycle(controller, messages):
+def test_notifications_are_translated_when_emitted(controller, messages):
+    controller._on_engine_event(Event("failed", "MARS ATTACK 13", msg("err_network", detail="timed out")))
+    controller._on_cycle_finished(CycleResult("folder_missing", msg("cycle_folder_missing", folder=r"D:\Podcasts")))
+    assert messages == [
+        ("Upload failed", "MARS ATTACK 13: Can't connect to Ausha: timed out"),
+        ("Folder not found", r"Folder not found: D:\Podcasts"),
+    ]
+
+
+def test_idle_state_message_is_a_stored_message(controller):
+    assert controller.state == "not_configured"  # jeton présent, aucun dossier
+    assert controller.message == msg("cycle_choose_folder")
+
+
+def test_dry_run_lines_are_kept_as_stored_messages(controller):
+    controller.update_config(replace(controller.config, dry_run=True))
+    controller._on_engine_event(Event("dry_run", "MARS ATTACK 13", msg("dry_would_publish", show="Mars Attack")))
+    controller._on_cycle_finished(CycleResult("ok"))
+    assert controller.dry_run_lines == [
+        msg("dry_line", title="MARS ATTACK 13", detail=msg("dry_would_publish", show="Mars Attack"))
+    ]
+
+
+def test_files_without_rule_are_notified_once_per_cycle(controller, messages, french):
     controller._on_engine_event(Event("no_rule", "interview_brut"))
     controller._on_cycle_finished(CycleResult("attention"))
     for title in ("a", "b", "c"):
@@ -179,7 +203,7 @@ def test_progress_is_forwarded_by_steps_of_five_percent(controller):
     assert controller.progress["MARS ATTACK 13"] == 100
 
 
-def test_settings_that_cannot_be_saved_are_reported_and_not_applied(controller, messages, monkeypatch):
+def test_settings_that_cannot_be_saved_are_reported_and_not_applied(controller, messages, monkeypatch, french):
     def full_disk(config, path):
         raise OSError(28, "Espace disque insuffisant")
 
@@ -215,7 +239,7 @@ def test_saving_settings_keeps_the_next_cycle_unless_the_interval_changes(contro
     assert restarts == [True]
 
 
-def test_new_token_notifies_again_if_still_invalid(controller, notes):
+def test_new_token_notifies_again_if_still_invalid(controller, notes, french):
     controller._on_cycle_finished(CycleResult("auth_error", "Unauthenticated"))
     controller._on_cycle_finished(CycleResult("auth_error", "Unauthenticated"))
     assert notes == ["Jeton Ausha invalide"]
@@ -224,7 +248,7 @@ def test_new_token_notifies_again_if_still_invalid(controller, notes):
     assert notes == ["Jeton Ausha invalide"] * 2
 
 
-def test_new_folder_notifies_again_if_still_missing(controller, notes):
+def test_new_folder_notifies_again_if_still_missing(controller, notes, french):
     missing = CycleResult("folder_missing", r"Dossier introuvable : D:\Podcasts")
     controller._on_cycle_finished(missing)
     controller.update_config(replace(controller.config, interval_minutes=20))

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QHBoxLayout, QListWidget, QMainWindow, QStackedWidget, QWidget
 
+from syncausha.i18n import tr
 from syncausha.ui.activity_page import ActivityPage
 from syncausha.ui.controller import AppController
 from syncausha.ui.rules_page import RulesPage
@@ -15,7 +16,7 @@ class MainWindow(QMainWindow):
     def __init__(self, controller: AppController) -> None:
         super().__init__()
         self.controller = controller
-        self.setWindowTitle("SyncAusha")
+        self.setWindowTitle(tr("app_title"))
         self.resize(880, 600)
         self.setMinimumSize(720, 480)
 
@@ -26,7 +27,7 @@ class MainWindow(QMainWindow):
         self.sidebar = QListWidget()
         self.sidebar.setObjectName("sidebar")
         self.sidebar.setFixedWidth(170)
-        self.sidebar.addItems(["Activité", "Règles", "Réglages"])
+        self.sidebar.addItems([tr("nav_activity"), tr("nav_rules"), tr("nav_settings")])
         self.stack = QStackedWidget()
         self.activity = ActivityPage(controller)
         self.rules = RulesPage(controller)

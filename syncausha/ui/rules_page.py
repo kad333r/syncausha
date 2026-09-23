@@ -26,12 +26,12 @@ from PySide6.QtWidgets import (
 )
 
 from syncausha.config import Rule
+from syncausha.i18n import render, tr
 from syncausha.rules import validate_image
 from syncausha.ui.controller import AppController, Catalog
 from syncausha.ui.style import palette
 from syncausha.ui.widgets import make_label
 
-NO_PLAYLIST = "Aucune playlist"
 PREVIEW_SIZE = 110
 THUMBNAIL_SIZE = 36
 
@@ -61,15 +61,13 @@ class RulesPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
         header = QHBoxLayout()
-        header.addWidget(make_label("Règles", "pageTitle"))
+        header.addWidget(make_label(tr("rules_title"), "pageTitle"))
         header.addStretch(1)
-        add_button = QPushButton("Ajouter")
+        add_button = QPushButton(tr("rules_add"))
         add_button.clicked.connect(lambda _=False: self.start_new_rule(""))
         header.addWidget(add_button)
         layout.addLayout(header)
-        layout.addWidget(make_label(
-            "La première règle dont le mot-clé apparaît dans le nom du fichier s'applique. "
-            "Glissez les règles pour changer l'ordre.", "muted", wrap=True))
+        layout.addWidget(make_label(tr("rules_intro"), "muted", wrap=True))
         self.catalog_status = make_label(object_name="muted", wrap=True)
         layout.addWidget(self.catalog_status)
 
@@ -87,31 +85,31 @@ class RulesPage(QWidget):
         card_layout.setSpacing(16)
         form = QFormLayout()
         self.keyword = QLineEdit()
-        self.keyword.setPlaceholderText("MARS ATTACK")
-        form.addRow("Le nom du fichier contient", self.keyword)
+        self.keyword.setPlaceholderText(tr("rules_keyword_placeholder"))
+        form.addRow(tr("rules_field_keyword"), self.keyword)
         self.show_combo = QComboBox()
         self.show_combo.currentIndexChanged.connect(lambda _i: self._fill_playlists())
-        form.addRow("Émission", self.show_combo)
+        form.addRow(tr("rules_field_show"), self.show_combo)
         self.playlist_combo = QComboBox()
-        form.addRow("Playlist", self.playlist_combo)
+        form.addRow(tr("rules_field_playlist"), self.playlist_combo)
         for combo in (self.show_combo, self.playlist_combo):
             combo.setItemDelegate(QStyledItemDelegate(combo))  # liste déroulante stylée par la feuille de style
         self.description = QPlainTextEdit()
-        self.description.setPlaceholderText("Nouvel épisode de Mars Attack. Retrouvez-nous sur…")
+        self.description.setPlaceholderText(tr("rules_description_placeholder"))
         self.description.setFixedHeight(90)
-        form.addRow("Description", self.description)
+        form.addRow(tr("rules_field_description"), self.description)
         card_layout.addLayout(form, 1)
 
         image_column = QVBoxLayout()
-        image_column.addWidget(make_label("Image", "muted"))
-        self.image_preview = QLabel("Aucune image")
+        image_column.addWidget(make_label(tr("rules_image"), "muted"))
+        self.image_preview = QLabel(tr("rules_no_image"))
         self.image_preview.setObjectName("imagePreview")
         self.image_preview.setFixedSize(PREVIEW_SIZE, PREVIEW_SIZE)
         self.image_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         image_column.addWidget(self.image_preview)
-        choose_button = QPushButton("Choisir…")
+        choose_button = QPushButton(tr("common_choose"))
         choose_button.clicked.connect(self._choose_image)
-        remove_button = QPushButton("Retirer")
+        remove_button = QPushButton(tr("rules_remove_image"))
         remove_button.clicked.connect(lambda _=False: self._set_image(""))
         image_column.addWidget(choose_button)
         image_column.addWidget(remove_button)
@@ -125,11 +123,11 @@ class RulesPage(QWidget):
         actions = QHBoxLayout()
         self.form_error = make_label(object_name="error")
         actions.addWidget(self.form_error, 1)
-        self.delete_button = QPushButton("Supprimer")
+        self.delete_button = QPushButton(tr("common_delete"))
         self.delete_button.setObjectName("danger")
         self.delete_button.clicked.connect(self._delete)
         actions.addWidget(self.delete_button)
-        save_button = QPushButton("Enregistrer")
+        save_button = QPushButton(tr("common_save"))
         save_button.setObjectName("primary")
         save_button.clicked.connect(self._save)
         actions.addWidget(save_button)
@@ -145,7 +143,7 @@ class RulesPage(QWidget):
         self.reload_catalog()
 
     def reload_catalog(self) -> None:
-        self.catalog_status.setText("Chargement des émissions Ausha…")
+        self.catalog_status.setText(tr("rules_loading_shows"))
         self.controller.fetch_catalog(self._on_catalog, self._on_catalog_failed)
 
     def _on_catalog(self, catalog: Catalog) -> None:
@@ -154,7 +152,7 @@ class RulesPage(QWidget):
         self._fill_shows()
 
     def _on_catalog_failed(self, error: Exception) -> None:
-        self.catalog_status.setText(f"Impossible de charger les émissions Ausha : {error}")
+        self.catalog_status.setText(tr("rules_shows_failed", detail=render(str(error))))
 
     # --- Liste ---------------------------------------------------------------
 
@@ -162,9 +160,9 @@ class RulesPage(QWidget):
         self.list.blockSignals(True)
         self.list.clear()
         for index, rule in enumerate(self.controller.config.rules):
-            target = rule.show_name or f"Émission {rule.show_id}"
+            target = rule.show_name or tr("rules_show_fallback", id=rule.show_id)
             if rule.playlist_name:
-                target += f" → {rule.playlist_name}"
+                target = tr("rules_show_and_playlist", show=target, playlist=rule.playlist_name)
             item = QListWidgetItem(_thumbnail(rule.image_path), f"{rule.keyword}\n{target}")
             item.setData(Qt.ItemDataRole.UserRole, index)
             self.list.addItem(item)
@@ -202,19 +200,19 @@ class RulesPage(QWidget):
         rule = self._editing
         items = [(show.name, show.id) for show in sorted(self.catalog, key=lambda s: s.name.casefold())]
         if rule.show_id and rule.show_id not in {show.id for show in self.catalog}:
-            items.insert(0, (rule.show_name or f"Émission {rule.show_id}", rule.show_id))
+            items.insert(0, (rule.show_name or tr("rules_show_fallback", id=rule.show_id), rule.show_id))
         _set_combo_items(self.show_combo, items, rule.show_id or None)
         self._fill_playlists()
 
     def _fill_playlists(self) -> None:
         show_id = self.show_combo.currentData()
         playlists = next((pls for show, pls in self.catalog.items() if show.id == show_id), [])
-        items: list[tuple[str, int | None]] = [(NO_PLAYLIST, None)]
+        items: list[tuple[str, int | None]] = [(tr("rules_no_playlist"), None)]
         items += [(p.name, p.id) for p in sorted(playlists, key=lambda p: p.name.casefold())]
         rule = self._editing
         selected = rule.playlist_id if rule.show_id == show_id else None
         if selected is not None and selected not in {p.id for p in playlists}:
-            items.append((rule.playlist_name or f"Playlist {selected}", selected))
+            items.append((rule.playlist_name or tr("rules_playlist_fallback", id=selected), selected))
         _set_combo_items(self.playlist_combo, items, selected)
 
     def _set_image(self, path: str) -> None:
@@ -222,16 +220,16 @@ class RulesPage(QWidget):
         pixmap = QPixmap(path) if path else QPixmap()
         if pixmap.isNull():
             self.image_preview.setPixmap(QPixmap())
-            self.image_preview.setText("Aucune image")
+            self.image_preview.setText(tr("rules_no_image"))
         else:
             self.image_preview.setPixmap(pixmap.scaled(
                 PREVIEW_SIZE, PREVIEW_SIZE,
                 Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        self.image_error.setText((validate_image(path) or "") if path else "")
+        self.image_error.setText(render(validate_image(path) or "") if path else "")
 
     def _choose_image(self) -> None:
         start = str(Path(self._image_path).parent) if self._image_path else ""
-        path, _filter = QFileDialog.getOpenFileName(self, "Choisir l'image", start, "Images (*.png *.jpg *.jpeg)")
+        path, _filter = QFileDialog.getOpenFileName(self, tr("dialog_choose_image"), start, tr("rules_image_filter"))
         if path:
             self._set_image(path)
 
@@ -239,13 +237,13 @@ class RulesPage(QWidget):
         keyword = self.keyword.text().strip()
         show_id = self.show_combo.currentData()
         if not keyword:
-            self.form_error.setText("Indiquez un mot-clé.")
+            self.form_error.setText(tr("rules_err_keyword"))
             return
         if not show_id:
-            self.form_error.setText("Choisissez une émission.")
+            self.form_error.setText(tr("rules_err_show"))
             return
         if self._image_path and validate_image(self._image_path):
-            self.form_error.setText("Corrigez l'image avant d'enregistrer.")
+            self.form_error.setText(tr("rules_err_image"))
             return
         playlist_id = self.playlist_combo.currentData()
         rule = Rule(
@@ -265,7 +263,7 @@ class RulesPage(QWidget):
             rules[self._editing_index] = rule
             index = self._editing_index
         if not self.controller.update_config(replace(self.controller.config, rules=rules)):
-            self.form_error.setText("Règle non enregistrée.")
+            self.form_error.setText(tr("rules_not_saved"))
             return
         self._render_list()
         self.list.setCurrentRow(index)
@@ -274,7 +272,8 @@ class RulesPage(QWidget):
     def _delete(self) -> None:
         if self._editing_index is None:
             return
-        answer = QMessageBox.question(self, "Supprimer la règle", f"Supprimer la règle « {self._editing.keyword} » ?")
+        answer = QMessageBox.question(
+            self, tr("dialog_delete_rule"), tr("dialog_delete_rule_question", keyword=self._editing.keyword))
         if answer != QMessageBox.StandardButton.Yes:
             return
         rules = list(self.controller.config.rules)

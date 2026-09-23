@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
 from syncausha.ausha_client import AushaClient, AuthError, Playlist, RejectedError, Show
 from syncausha.config import Config, get_token, load_config, save_config, set_token
+from syncausha.i18n import msg, render, tr
 from syncausha.journal import Journal
 from syncausha.sync_engine import CycleResult, Event, SyncEngine
 from syncausha.ui.async_call import run_async
@@ -18,23 +19,22 @@ from syncausha.ui.async_call import run_async
 log = logging.getLogger(__name__)
 
 FIRST_CYCLE_DELAY_MS = 10_000
+# Notifications : clés (titre, corps) traduites au moment de l'émission, dans la langue active.
 FILE_NOTIFICATIONS = {
-    "published": ("Épisode publié", "{title} · {detail}"),
-    "no_rule": ("Aucune règle", "{title} n'a pas été envoyé : aucune règle ne correspond."),
-    "broken_rule": ("Règle à corriger", "{title} : {detail}"),
-    "rejected": ("Refusé par Ausha", "{title} : {detail}"),
-    "partial": ("Publié avec un problème", "{title} : {detail}"),
-    "failed": ("Échec de l'envoi", "{title} : {detail}"),
+    "published": ("notif_published", "notif_published_body"),
+    "no_rule": ("notif_no_rule", "notif_no_rule_body"),
+    "broken_rule": ("notif_broken_rule", "notif_file_detail"),
+    "rejected": ("notif_rejected", "notif_file_detail"),
+    "partial": ("notif_partial", "notif_file_detail"),
+    "failed": ("notif_failed", "notif_file_detail"),
 }
-NO_RULE_GROUPED = ("Fichiers sans règle", "{count} fichiers n'ont pas été envoyés : aucune règle ne correspond.")
-BASELINE_NOTIFICATION = (
-    "Dossier pris en compte",
-    "{count} fichier(s) déjà présent(s) ignoré(s). Seuls les nouveaux fichiers seront publiés.",
-)
+NO_RULE_GROUPED = ("notif_no_rule_grouped", "notif_no_rule_grouped_body")
+BASELINE_NOTIFICATION = ("notif_baseline", "notif_baseline_body")
 PROGRESS_STEP = 5  # points de pourcentage entre deux rafraîchissements de l'affichage
-STATE_NOTIFICATIONS = {
-    "auth_error": ("Jeton Ausha invalide", "Mettez à jour votre jeton dans les réglages."),
-    "folder_missing": ("Dossier introuvable", "{message}"),
+# Corps None : le message du cycle, traduit.
+STATE_NOTIFICATIONS: dict[str, tuple[str, str | None]] = {
+    "auth_error": ("notif_auth_error", "notif_auth_error_body"),
+    "folder_missing": ("notif_folder_missing", None),
 }
 
 Catalog = dict[Show, list[Playlist]]
@@ -76,7 +76,7 @@ class AppController(QObject):
         self._rerun_requested = False
         self.auth_blocked = False
         self.progress: dict[str, int] = {}
-        self.dry_run_lines: list[str] = []
+        self.dry_run_lines: list[str] = []  # messages stockés (msg), traduits à l'affichage
         self._pending_dry_run: list[str] = []
         self._no_rule_titles: list[str] = []
         self._last_result_state = ""
@@ -144,13 +144,13 @@ class AppController(QObject):
             self._on_progress(event.title, event.percent)
             return
         if event.kind == "dry_run":
-            self._pending_dry_run.append(f"{event.title} — {event.detail}")
+            self._pending_dry_run.append(msg("dry_line", title=event.title, detail=event.detail))
             return
         self.progress.pop(event.title, None)
         if event.kind == "no_rule":
             self._no_rule_titles.append(event.title)  # une seule notification en fin de cycle
-        elif template := FILE_NOTIFICATIONS.get(event.kind):
-            self.notification.emit(template[0], template[1].format(title=event.title, detail=event.detail))
+        elif keys := FILE_NOTIFICATIONS.get(event.kind):
+            self.notification.emit(tr(keys[0]), tr(keys[1], title=event.title, detail=render(event.detail)))
         self.activity_changed.emit()
 
     def _on_progress(self, title: str, percent: int) -> None:
@@ -164,10 +164,11 @@ class AppController(QObject):
     def _notify_files_without_rule(self) -> None:
         titles, self._no_rule_titles = self._no_rule_titles, []
         if len(titles) == 1:
-            title, body = FILE_NOTIFICATIONS["no_rule"]
-            self.notification.emit(title, body.format(title=titles[0]))
+            title_key, body_key = FILE_NOTIFICATIONS["no_rule"]
+            self.notification.emit(tr(title_key), tr(body_key, title=titles[0]))
         elif titles:
-            self.notification.emit(NO_RULE_GROUPED[0], NO_RULE_GROUPED[1].format(count=len(titles)))
+            title_key, body_key = NO_RULE_GROUPED
+            self.notification.emit(tr(title_key), tr(body_key, count=len(titles)))
 
     @Slot(object)
     def _on_cycle_finished(self, result: CycleResult) -> None:
@@ -180,8 +181,8 @@ class AppController(QObject):
         self.dry_run_lines = self._pending_dry_run if self.config.dry_run else []
         self.auth_blocked = result.state == "auth_error"
         if result.state != self._last_result_state and result.state in STATE_NOTIFICATIONS:
-            title, body = STATE_NOTIFICATIONS[result.state]
-            self.notification.emit(title, body.format(message=result.message))
+            title_key, body_key = STATE_NOTIFICATIONS[result.state]
+            self.notification.emit(tr(title_key), tr(body_key) if body_key else render(result.message))
         self._last_result_state = result.state
         if self.config.paused:  # mis en pause pendant le cycle
             self._set_state("paused", "")
@@ -195,29 +196,30 @@ class AppController(QObject):
         """Fichiers déjà présents ignorés : le dossier est noté comme pris en compte, puis le vrai cycle suit."""
         if result.folder == self.config.watch_folder:  # sinon le dossier a changé : nouvel état des lieux
             if not self.update_config(replace(self.config, baseline_folder=result.folder)):
-                self._set_state("not_configured", "Réglages non enregistrés")
+                self._set_state("not_configured", msg("settings_not_saved"))
                 return
             if result.count:
-                title, body = BASELINE_NOTIFICATION
-                self.notification.emit(title, body.format(count=result.count))
+                title_key, body_key = BASELINE_NOTIFICATION
+                self.notification.emit(tr(title_key), tr(body_key, count=result.count))
         if self.config.paused:
             self._set_state("paused", "")
         else:
             self.sync_now()
 
     def _set_state(self, state: str, message: str) -> None:
+        """message : texte stocké (msg) comme ceux du moteur, traduit à l'affichage par render()."""
         self.state, self.message = state, message
         self.state_changed.emit(state, message)
 
     def _idle_state(self) -> tuple[str, str]:
         """État hors cycle (démarrage, reprise après une pause), déduit des réglages et du journal."""
         if not self.has_token():
-            return "not_configured", "Renseignez votre jeton Ausha."
+            return "not_configured", msg("cycle_enter_token")
         if not self.config.watch_folder:
-            return "not_configured", "Choisissez le dossier à surveiller."
+            return "not_configured", msg("cycle_choose_folder")
         attention = self.journal.needing_attention()
         if attention:
-            return "attention", f"{len(attention)} fichier(s) à traiter"
+            return "attention", msg("cycle_files_need_attention", n=len(attention))
         if self.config.paused:
             return "paused", ""
         return "ok", ""
@@ -238,7 +240,7 @@ class AppController(QObject):
             save_config(config, self.config_path)
         except OSError as exc:
             log.error("Réglages non enregistrés : %s", exc)
-            self.notification.emit("Réglages non enregistrés", str(exc))
+            self.notification.emit(tr("settings_not_saved"), str(exc))
             return False
         self.config = config
         self.engine.config = config
@@ -276,7 +278,7 @@ class AppController(QObject):
 
         def load() -> Catalog:
             if not token:
-                raise AuthError("Aucun jeton Ausha enregistré.")
+                raise AuthError(msg("err_no_token"))
             with AushaClient(token, base_url) as client:
                 return {show: _playlists(client, show) for show in client.list_shows()}
 
@@ -298,5 +300,5 @@ def _playlists(client: AushaClient, show: Show) -> list[Playlist]:
     try:
         return client.list_playlists(show.id)
     except RejectedError as exc:
-        log.warning("Playlists de l'émission %s refusées par Ausha : %s", show.id, exc)
+        log.warning("Playlists de l'émission %s refusées par Ausha : %s", show.id, render(str(exc), lang="fr"))
         return []

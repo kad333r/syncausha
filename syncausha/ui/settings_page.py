@@ -21,10 +21,9 @@ from PySide6.QtWidgets import (
 
 from syncausha import autostart
 from syncausha.config import MAX_INTERVAL, MIN_INTERVAL, app_data_dir
+from syncausha.i18n import render, tr
 from syncausha.ui.controller import AppController, Catalog
 from syncausha.ui.widgets import make_label, set_tone
-
-TOKEN_HINT = "Le jeton se crée dans Ausha : Mon compte → API publique."
 
 
 class SettingsPage(QWidget):
@@ -33,7 +32,7 @@ class SettingsPage(QWidget):
         self.controller = controller
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
-        layout.addWidget(make_label("Réglages", "pageTitle"))
+        layout.addWidget(make_label(tr("settings_title"), "pageTitle"))
 
         card = QFrame()
         card.setObjectName("card")
@@ -44,7 +43,7 @@ class SettingsPage(QWidget):
 
         self.token = QLineEdit()
         self.token.setEchoMode(QLineEdit.EchoMode.Password)
-        test_button = QPushButton("Tester la connexion")
+        test_button = QPushButton(tr("settings_test_connection"))
         test_button.clicked.connect(self._test)
         token_row = QHBoxLayout()
         token_row.addWidget(self.token, 1)
@@ -53,41 +52,41 @@ class SettingsPage(QWidget):
         token_field.setSpacing(6)
         token_field.addLayout(token_row)
         # Aide sous le jeton, remplacée par le résultat du test de connexion.
-        self.test_result = make_label(TOKEN_HINT, "muted", wrap=True)
+        self.test_result = make_label(tr("settings_token_hint"), "muted", wrap=True)
         token_field.addWidget(self.test_result)
-        form.addRow("Jeton Ausha", token_field)
+        form.addRow(tr("settings_field_token"), token_field)
 
         self.folder = QLineEdit()
         self.folder.setReadOnly(True)
-        folder_button = QPushButton("Choisir…")
+        folder_button = QPushButton(tr("common_choose"))
         folder_button.clicked.connect(self._choose_folder)
         folder_row = QHBoxLayout()
         folder_row.addWidget(self.folder, 1)
         folder_row.addWidget(folder_button)
-        form.addRow("Dossier surveillé", folder_row)
+        form.addRow(tr("settings_field_folder"), folder_row)
 
         self.interval = QSpinBox()
         self.interval.setRange(MIN_INTERVAL, MAX_INTERVAL)
-        self.interval.setSuffix(" min")
+        self.interval.setSuffix(tr("settings_interval_suffix"))
         self.interval.setFixedWidth(110)
-        form.addRow("Vérifier toutes les", self.interval)
+        form.addRow(tr("settings_field_interval"), self.interval)
 
-        self.autostart = QCheckBox("Lancer au démarrage de Windows")
-        self.paused = QCheckBox("Mettre la synchronisation en pause")
-        self.dry_run = QCheckBox("Essai à blanc : ne publie rien, montre ce qui serait envoyé")
+        self.autostart = QCheckBox(tr("settings_autostart"))
+        self.paused = QCheckBox(tr("settings_pause"))
+        self.dry_run = QCheckBox(tr("settings_dry_run"))
         for checkbox in (self.autostart, self.paused, self.dry_run):
             form.addRow("", checkbox)
         layout.addWidget(card)
 
         actions = QHBoxLayout()
-        logs_button = QPushButton("Ouvrir le dossier des logs")
+        logs_button = QPushButton(tr("settings_open_logs"))
         logs_button.setObjectName("link")
         logs_button.clicked.connect(self._open_logs)
         actions.addWidget(logs_button)
         actions.addStretch(1)
         self.saved_label = make_label(object_name="muted")
         actions.addWidget(self.saved_label)
-        save_button = QPushButton("Enregistrer")
+        save_button = QPushButton(tr("common_save"))
         save_button.setObjectName("primary")
         save_button.clicked.connect(self._save)
         actions.addWidget(save_button)
@@ -104,9 +103,7 @@ class SettingsPage(QWidget):
         config = self.controller.config
         self.token.clear()
         self.token.setPlaceholderText(
-            "Jeton enregistré — laissez vide pour le conserver"
-            if self.controller.has_token()
-            else "Collez votre jeton personnel Ausha"
+            tr("settings_token_saved_placeholder") if self.controller.has_token() else tr("settings_token_placeholder")
         )
         self.folder.setText(config.watch_folder)
         self.interval.setValue(config.interval_minutes)
@@ -115,7 +112,7 @@ class SettingsPage(QWidget):
         self._saved_paused = config.paused
         self.dry_run.setChecked(config.dry_run)
         self.saved_label.clear()
-        self._show_test_result(TOKEN_HINT)
+        self._show_test_result(tr("settings_token_hint"))
 
     def _follow_pause(self, _state: str, _message: str) -> None:
         """Pause changée ailleurs (icône) : seule cette case suit, les autres saisies sont gardées."""
@@ -125,20 +122,20 @@ class SettingsPage(QWidget):
             self.paused.setChecked(paused)
 
     def _choose_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Dossier des podcasts", self.folder.text())
+        folder = QFileDialog.getExistingDirectory(self, tr("dialog_choose_folder"), self.folder.text())
         if folder:
             self.folder.setText(os.path.normpath(folder))
 
     def _test(self) -> None:
-        self._show_test_result("Connexion à Ausha…")
+        self._show_test_result(tr("settings_connecting"))
         self.controller.fetch_catalog(self._on_test_ok, self._on_test_failed, token=self.token.text().strip() or None)
 
     def _on_test_ok(self, catalog: Catalog) -> None:
-        names = ", ".join(sorted(show.name for show in catalog)) or "aucune émission"
-        self._show_test_result(f"Connexion réussie. Émissions : {names}")
+        names = tr("common_list_separator").join(sorted(show.name for show in catalog)) or tr("settings_no_shows")
+        self._show_test_result(tr("settings_connection_ok", shows=names))
 
     def _on_test_failed(self, error: Exception) -> None:
-        self._show_test_result(f"Échec : {error}", "error")
+        self._show_test_result(tr("settings_test_failed", detail=render(str(error))), "error")
 
     def _show_test_result(self, text: str, tone: str = "muted") -> None:
         self.test_result.setText(text)
@@ -150,7 +147,7 @@ class SettingsPage(QWidget):
             try:
                 self.controller.update_token(token)
             except Exception as exc:  # Gestionnaire d'identifiants indisponible ou refus
-                self.saved_label.setText(f"Jeton non enregistré : {exc}")
+                self.saved_label.setText(tr("settings_token_not_saved", detail=render(str(exc))))
                 return
         config = replace(
             self.controller.config,
@@ -160,13 +157,13 @@ class SettingsPage(QWidget):
             dry_run=self.dry_run.isChecked(),
         )
         if not self.controller.update_config(config):
-            self.saved_label.setText("Réglages non enregistrés")
+            self.saved_label.setText(tr("settings_not_saved"))
             return
-        message = "Réglages enregistrés"
+        message = tr("settings_saved")
         try:
             autostart.set_enabled(self.autostart.isChecked())
         except OSError as exc:  # registre verrouillé par une stratégie ou un antivirus
-            message = f"Démarrage automatique non modifié : {exc}"
+            message = tr("settings_autostart_failed", detail=exc)
         self.load()
         self.saved_label.setText(message)
         if not config.paused:

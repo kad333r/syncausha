@@ -2,8 +2,6 @@
 import ast
 from pathlib import Path
 
-import pytest
-
 UI_DIR = Path(__file__).resolve().parent.parent / "syncausha" / "ui"
 # fonction/méthode → positions des arguments qui sont des textes visibles
 SINKS = {
@@ -51,7 +49,6 @@ def _log_args(tree):
     return nodes
 
 
-@pytest.mark.xfail(reason="UI en cours de traduction (Task 5)", strict=True)
 def test_no_hardcoded_text_passed_to_widgets():
     offenders = []
     for path in sorted(UI_DIR.glob("*.py")):
@@ -71,7 +68,6 @@ def test_no_hardcoded_text_passed_to_widgets():
     assert offenders == []
 
 
-@pytest.mark.xfail(reason="UI en cours de traduction (Task 5)", strict=True)
 def test_no_french_text_left_in_ui_modules():
     offenders = []
     for path in sorted(UI_DIR.glob("*.py")):
