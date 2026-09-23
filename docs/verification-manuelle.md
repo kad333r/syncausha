@@ -1,9 +1,9 @@
 # Vérification manuelle de SyncAusha
 
-À dérouler avant chaque diffusion de `SyncAusha-Setup.exe`.
+À dérouler avant chaque diffusion de `SyncAusha-Setup.exe`. Sauf dans la section « Langues », l'installateur et l'app sont utilisés en français.
 
 ## Installation
-- [ ] L'installateur est en français, propose « Lancer au démarrage » (cochée) et « Raccourci bureau » (décochée).
+- [ ] L'installateur propose « Lancer SyncAusha au démarrage de Windows » (cochée) et « Créer un raccourci sur le bureau » (décochée).
 - [ ] Aucune demande de droits administrateur.
 - [ ] L'app se lance en fin d'installation, fenêtre sur Réglages.
 
@@ -49,6 +49,18 @@
 ## Mise à jour et désinstallation
 - [ ] Relancer `SyncAusha-Setup.exe` pendant que l'app tourne : elle se ferme d'elle-même (pas de message « … est en cours d'exécution »), les réglages et l'historique sont conservés.
 - [ ] Désinstaller depuis Paramètres → Applications pendant que l'app tourne : elle se ferme d'elle-même.
-- [ ] La question « Supprimer aussi vos réglages et l'historique SyncAusha ? » s'affiche ; « Non » conserve `%APPDATA%\SyncAusha` et le jeton.
+- [ ] La question « Supprimer aussi vos réglages, l'historique et le jeton Ausha de SyncAusha ? » s'affiche ; « Non » conserve `%APPDATA%\SyncAusha` et le jeton.
 - [ ] « Oui » supprime `%APPDATA%\SyncAusha` et retire le jeton : plus d'entrée SyncAusha dans Gestionnaire d'identifiants → Informations d'identification Windows.
 - [ ] La valeur `SyncAusha` de HKCU\...\Run a disparu.
+
+## Langues
+- [ ] Au lancement, l'installateur demande la langue : English (présélectionné), Français, العربية.
+- [ ] Dans chaque langue, les pages de l'installateur, les cases « Options », la case de lancement final et la question de désinstallation sont traduites ; en arabe, l'assistant s'affiche de droite à gauche.
+- [ ] L'app démarre dans la langue choisie à l'installation (valeur `Language` de `HKCU\Software\SyncAusha` = `en` / `fr` / `ar`).
+- [ ] Réglages → Langue, puis « Enregistrer » : la fenêtre change aussitôt de langue, sans redémarrage, et reste sur Réglages ; le menu et l'info-bulle de l'icône suivent.
+- [ ] Après redémarrage, l'app reste dans la langue choisie dans Réglages, même si l'installateur a été relancé dans une autre langue.
+- [ ] Les lignes déjà présentes dans Activité (erreurs, fichiers à traiter) s'affichent dans la nouvelle langue.
+- [ ] Arabe : toute l'interface de droite à gauche (barre latérale à droite, textes alignés à droite, flèches des listes déroulantes du bon côté), aucun texte coupé, chiffres occidentaux.
+- [ ] Boutons standard (Oui / Non de la confirmation de suppression d'une règle) dans la langue active.
+- [ ] Notifications (« Épisode publié », « Aucune règle »…) dans la langue active, y compris juste après un changement de langue.
+- [ ] La désinstallation supprime la clé `HKCU\Software\SyncAusha`.
