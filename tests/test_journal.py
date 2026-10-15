@@ -1,4 +1,5 @@
 import itertools
+import sqlite3
 
 import pytest
 
@@ -45,6 +46,13 @@ def test_ensure_creates_pending_entry_and_keeps_state(journal):
     assert entry.status is Status.PUBLIE
     assert entry.episode_id == 42
     assert entry.show_name == "Mars"
+
+
+def test_ensure_records_folder(journal):
+    entry = journal.ensure("h1", "a.mp3", 10, folder="D:/Mars")
+    assert entry.folder == "D:/Mars"
+    assert journal.ensure("h1", "a.mp3", 10, folder="E:/Autre").folder == "E:/Autre"
+    assert journal.ensure("h2", "b.mp3", 1).folder == ""
 
 
 def test_update_rejects_unknown_fields(journal):
@@ -140,7 +148,82 @@ def test_sets_user_version_on_creation(tmp_path):
     j = Journal(tmp_path / "j.db")
     version = j._db.execute("PRAGMA user_version").fetchone()[0]
     j.close()
-    assert version == 1
+    assert version == 2
+
+
+# Schéma du journal avant la colonne folder (version 1 de la base).
+V1_SCHEMA = """
+CREATE TABLE IF NOT EXISTS files (
+    hash TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    show_id INTEGER,
+    show_name TEXT NOT NULL DEFAULT '',
+    episode_id INTEGER,
+    step TEXT NOT NULL DEFAULT 'none',
+    status TEXT NOT NULL DEFAULT 'en_attente',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hash_cache (
+    path TEXT PRIMARY KEY,
+    size INTEGER NOT NULL,
+    mtime REAL NOT NULL,
+    hash TEXT NOT NULL
+);
+"""
+
+
+def make_v1_database(path, user_version=1):
+    db = sqlite3.connect(path)
+    db.executescript(V1_SCHEMA)
+    db.execute("INSERT INTO files (hash, filename, size, status, updated_at) VALUES ('h', 'old.mp3', 1, 'publie', 1.0)")
+    db.execute(f"PRAGMA user_version = {user_version}")
+    db.commit()
+    db.close()
+
+
+def read_user_version(path):
+    db = sqlite3.connect(path)
+    try:
+        return db.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        db.close()
+
+
+def test_migrates_v1_database(tmp_path):
+    path = tmp_path / "journal.db"
+    make_v1_database(path)
+    journal = Journal(path)
+    entry = journal.get("h")
+    assert entry.filename == "old.mp3" and entry.folder == "" and entry.status.value == "publie"
+    assert journal.ensure("h", "old.mp3", 1, folder="D:/Mars").folder == "D:/Mars"
+    journal.close()
+    assert read_user_version(path) == 2
+
+
+def test_migrates_unversioned_old_tables(tmp_path):
+    path = tmp_path / "journal.db"
+    make_v1_database(path, user_version=0)
+    journal = Journal(path)
+    assert journal.get("h").folder == ""
+    journal.close()
+    assert read_user_version(path) == 2
+
+
+def test_migration_survives_a_previous_interruption(tmp_path):
+    # Colonne déjà ajoutée mais version restée à 1 (arrêt entre l'ALTER et l'écriture de la version).
+    path = tmp_path / "journal.db"
+    make_v1_database(path)
+    db = sqlite3.connect(path)
+    db.execute("ALTER TABLE files ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
+    db.commit()
+    db.close()
+    journal = Journal(path)
+    assert journal.get("h").folder == ""
+    journal.close()
+    assert read_user_version(path) == 2
 
 
 def test_open_journal_quarantines_corrupt_file_and_starts_fresh(tmp_path):

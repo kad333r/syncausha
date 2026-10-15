@@ -55,6 +55,7 @@ class Entry:
     attempts: int
     last_error: str
     updated_at: float
+    folder: str = ""  # dossier où le fichier a été vu pour la dernière fois
 
 
 _SCHEMA = """
@@ -69,7 +70,8 @@ CREATE TABLE IF NOT EXISTS files (
     status TEXT NOT NULL DEFAULT 'en_attente',
     attempts INTEGER NOT NULL DEFAULT 0,
     last_error TEXT NOT NULL DEFAULT '',
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    folder TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS hash_cache (
     path TEXT PRIMARY KEY,
@@ -78,10 +80,14 @@ CREATE TABLE IF NOT EXISTS hash_cache (
     hash TEXT NOT NULL
 );
 """
-_COLUMNS = "hash, filename, size, show_id, show_name, episode_id, step, status, attempts, last_error, updated_at"
+_COLUMNS = "hash, filename, size, show_id, show_name, episode_id, step, status, attempts, last_error, updated_at, folder"
 _UPDATABLE = frozenset(
-    {"filename", "size", "show_id", "show_name", "episode_id", "step", "status", "attempts", "last_error", "updated_at"}
+    {
+        "filename", "size", "show_id", "show_name", "episode_id", "step", "status", "attempts", "last_error",
+        "updated_at", "folder",
+    }
 )
+SCHEMA_VERSION = 2  # 1 : première version ; 2 : colonne folder
 
 
 class Journal:
@@ -92,14 +98,22 @@ class Journal:
         self._db = sqlite3.connect(str(path), check_same_thread=False)
         with self._lock:
             try:
-                self._db.executescript(_SCHEMA)
+                version = self._db.execute("PRAGMA user_version").fetchone()[0]
+                self._db.executescript(_SCHEMA)  # base neuve : schéma complet ; sinon sans effet
+                if version < SCHEMA_VERSION:
+                    self._migrate()
             except Exception:
                 # Referme la connexion pour ne pas garder le fichier verrouillé sous Windows.
                 self._db.close()
                 raise
-            if self._db.execute("PRAGMA user_version").fetchone()[0] == 0:
-                self._db.execute("PRAGMA user_version = 1")
-                self._db.commit()
+
+    def _migrate(self) -> None:
+        """Amène une base neuve (version 0) ou de version 1 au schéma courant."""
+        columns = {row[1] for row in self._db.execute("PRAGMA table_info(files)")}
+        if "folder" not in columns:  # absente d'une base 1.0 ; déjà là si une migration a été interrompue
+            self._db.execute("ALTER TABLE files ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
+        self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        self._db.commit()
 
     def close(self) -> None:
         with self._lock:
@@ -125,13 +139,13 @@ class Journal:
             row = self._db.execute(f"SELECT {_COLUMNS} FROM files WHERE hash = ?", (file_hash,)).fetchone()
         return _to_entry(row) if row else None
 
-    def ensure(self, file_hash: str, filename: str, size: int) -> Entry:
-        """Crée l'entrée si besoin (statut en_attente) ; met à jour le nom sinon."""
+    def ensure(self, file_hash: str, filename: str, size: int, folder: str = "") -> Entry:
+        """Crée l'entrée si besoin (statut en_attente) ; met à jour le nom et le dossier sinon."""
         with self._lock, self._db:
             self._db.execute(
-                "INSERT INTO files (hash, filename, size, updated_at) VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(hash) DO UPDATE SET filename = excluded.filename",
-                (file_hash, filename, size, self._clock()),
+                "INSERT INTO files (hash, filename, size, updated_at, folder) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(hash) DO UPDATE SET filename = excluded.filename, folder = excluded.folder",
+                (file_hash, filename, size, self._clock(), folder),
             )
         return self.get(file_hash)
 
@@ -214,8 +228,9 @@ def _sha256(path: Path) -> str:
 
 
 def _to_entry(row: tuple) -> Entry:
-    (file_hash, filename, size, show_id, show_name, episode_id, step, status, attempts, last_error, updated_at) = row
+    (file_hash, filename, size, show_id, show_name, episode_id, step, status, attempts, last_error, updated_at,
+     folder) = row
     return Entry(
         file_hash, filename, size, show_id, show_name, episode_id,
-        Step(step), Status(status), attempts, last_error, updated_at,
+        Step(step), Status(status), attempts, last_error, updated_at, folder,
     )
