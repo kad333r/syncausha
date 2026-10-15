@@ -9,7 +9,7 @@ from PySide6.QtCore import QCoreApplication, QDateTime, QEvent, QLocale, Qt, QTr
 from PySide6.QtWidgets import QSpinBox
 
 from syncausha import autostart, i18n
-from syncausha.config import Config, save_config
+from syncausha.config import Config, KeywordRule, ShowFolder, save_config
 from syncausha.i18n import tr
 from syncausha.journal import Journal
 from syncausha.ui import controller as controller_module
@@ -44,7 +44,8 @@ def controller(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(controller_module, "get_token", lambda: None)
     monkeypatch.setattr(autostart, "is_enabled", lambda: False)
     monkeypatch.setattr(autostart, "set_enabled", lambda enabled: None)
-    save_config(Config(watch_folder=str(tmp_path), baseline_folder=str(tmp_path)), tmp_path / "config.json")
+    show = ShowFolder(1, "Mars Attack", str(tmp_path), str(tmp_path), [KeywordRule("MARS ATTACK")])
+    save_config(Config(shows=[show]), tmp_path / "config.json")
     journal = Journal(tmp_path / "journal.db")
     controller = AppController(tmp_path / "config.json", journal)
     monkeypatch.setattr(controller, "sync_now", lambda: None)  # pas de vrai cycle à l'enregistrement
@@ -265,12 +266,16 @@ def test_tray_is_retranslated_after_a_language_change(qapp, window, controller):
     tray = Tray(controller, window)
     assert tray.pause_action.text() == "Resume sync"
     choose_language(qapp, window, "ar")
-    actions = (tray.sync_action, tray.pause_action, tray.open_folder_action, tray.quit_action)
+    actions = (tray.sync_action, tray.pause_action, tray.folders_menu.menuAction(), tray.quit_action)
     assert [action.text() for action in actions] == [
         tr("tray_sync_now", lang="ar"),
         tr("tray_resume", lang="ar"),
-        tr("tray_open_folder", lang="ar"),
+        tr("tray_open_folders", lang="ar"),
         tr("tray_quit", lang="ar"),
+    ]
+    folder = str(window.controller.config.shows[0].folder)
+    assert [action.text() for action in tray.folders_menu.actions()] == [
+        tr("tray_open_show_folder", lang="ar", show="Mars Attack", folder=folder)
     ]
     assert state_text("paused") == tr("state_paused", lang="ar")
     assert tray.toolTip() == tr("tray_tooltip", lang="ar", state=state_text("paused"))

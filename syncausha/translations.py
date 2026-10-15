@@ -97,16 +97,6 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Arrêt demandé",
         "ar": "تم طلب الإيقاف",
     },
-    "cycle_choose_folder": {
-        "en": "Choose the folder to watch.",
-        "fr": "Choisissez le dossier à surveiller.",
-        "ar": "اختر المجلد المراد مراقبته.",
-    },
-    "cycle_folder_missing": {
-        "en": "Folder not found: {folder}",
-        "fr": "Dossier introuvable : {folder}",
-        "ar": "المجلد غير موجود: {folder}",
-    },
     "cycle_add_show": {
         "en": "Add a show and its folder in Shows.",
         "fr": "Ajoutez une émission et son dossier dans Émissions.",
@@ -254,11 +244,6 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Configuration incomplète",
         "ar": "الإعداد غير مكتمل",
     },
-    "state_folder_missing": {
-        "en": "Folder not found",
-        "fr": "Dossier introuvable",
-        "ar": "المجلد غير موجود",
-    },
     "state_auth_error": {
         "en": "Invalid Ausha token",
         "fr": "Jeton Ausha invalide",
@@ -305,10 +290,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "… et {n} autres",
         "ar": "… وملفات أخرى: {n}",
     },
-    "activity_no_folder": {
-        "en": "No folder chosen",
-        "fr": "Aucun dossier choisi",
-        "ar": "لم يُختر أي مجلد",
+    "activity_shows_watched": {
+        "en": "Shows watched: {n}",
+        "fr": "Émissions surveillées : {n}",
+        "ar": "البرامج المراقَبة: {n}",
     },
     "activity_sync_running": {
         "en": "sync in progress",
@@ -330,10 +315,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Créer une règle",
         "ar": "إنشاء قاعدة",
     },
-    "activity_edit_rules": {
-        "en": "Edit rules",
-        "fr": "Modifier les règles",
-        "ar": "تعديل القواعد",
+    "activity_edit_show": {
+        "en": "Edit show",
+        "fr": "Modifier l'émission",
+        "ar": "تعديل البرنامج",
     },
     "activity_publish_anyway": {
         "en": "Publish anyway",
@@ -544,11 +529,6 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Échec de la connexion : {detail}",
         "ar": "فشل الاتصال: {detail}",
     },
-    "settings_field_folder": {
-        "en": "Watched folder",
-        "fr": "Dossier surveillé",
-        "ar": "المجلد المراقَب",
-    },
     "settings_field_interval": {
         "en": "Check every",
         "fr": "Vérifier toutes les",
@@ -605,11 +585,6 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Choisir l'image",
         "ar": "اختيار صورة الغلاف",
     },
-    "dialog_choose_folder": {
-        "en": "Podcasts folder",
-        "fr": "Dossier des podcasts",
-        "ar": "مجلد البودكاست",
-    },
     "dialog_delete_rule": {
         "en": "Delete rule",
         "fr": "Supprimer la règle",
@@ -641,10 +616,15 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Reprendre la synchronisation",
         "ar": "استئناف المزامنة",
     },
-    "tray_open_folder": {
+    "tray_open_folders": {
         "en": "Open folder",
         "fr": "Ouvrir le dossier",
         "ar": "فتح المجلد",
+    },
+    "tray_open_show_folder": {
+        "en": "{show} — {folder}",
+        "fr": "{show} — {folder}",
+        "ar": "{show} — {folder}",
     },
     "tray_quit": {
         "en": "Quit",

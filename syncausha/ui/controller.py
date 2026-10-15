@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import ntpath
 import threading
 from collections.abc import Callable
 from dataclasses import replace
@@ -10,7 +11,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
 from syncausha.ausha_client import AushaClient, AuthError, Playlist, RejectedError, Show
-from syncausha.config import Config, get_token, load_config, save_config, set_token
+from syncausha.config import Config, ShowFolder, get_token, load_config, same_folder, save_config, set_token
 from syncausha.i18n import msg, render, tr
 from syncausha.journal import Journal
 from syncausha.sync_engine import CycleResult, Event, SyncEngine
@@ -31,13 +32,29 @@ FILE_NOTIFICATIONS = {
 NO_RULE_GROUPED = ("notif_no_rule_grouped", "notif_no_rule_grouped_body")
 BASELINE_NOTIFICATION = ("notif_baseline", "notif_baseline_body")
 PROGRESS_STEP = 5  # points de pourcentage entre deux rafraîchissements de l'affichage
-# Corps None : le message du cycle, traduit.
-STATE_NOTIFICATIONS: dict[str, tuple[str, str | None]] = {
+STATE_NOTIFICATIONS = {
     "auth_error": ("notif_auth_error", "notif_auth_error_body"),
-    "folder_missing": ("notif_folder_missing", None),
 }
+# Cycles allés jusqu'au bout : eux seuls disent quels dossiers sont introuvables.
+COMPLETED_STATES = ("ok", "attention")
 
 Catalog = dict[Show, list[Playlist]]
+MissingFolder = tuple[str, str]  # (dossier, émission), comme CycleResult.missing
+
+
+def show_label(show: ShowFolder) -> str:
+    """Nom d'une émission dans CycleResult.missing (sync_engine._missing) : son id si elle n'a pas de nom."""
+    return show.show_name or str(show.show_id)
+
+
+def watched_shows(config: Config) -> list[ShowFolder]:
+    """Émissions surveillées : celles qui ont un dossier."""
+    return [show for show in config.shows if show.folder]
+
+
+def _folder_keys(config: Config) -> set[str]:
+    """Dossiers surveillés, à la casse et à l'écriture près (comme same_folder)."""
+    return {ntpath.normcase(ntpath.normpath(show.folder)) for show in watched_shows(config)}
 
 
 class CycleWorker(QObject):
@@ -64,6 +81,7 @@ class AppController(QObject):
     activity_changed = Signal()
     progress_changed = Signal(str, int)
     notification = Signal(str, str)
+    config_changed = Signal()  # nouveaux réglages enregistrés et appliqués
     _engine_event = Signal(object)
     _start_cycle = Signal()
 
@@ -80,6 +98,9 @@ class AppController(QObject):
         self._pending_dry_run: list[str] = []
         self._no_rule_titles: list[str] = []
         self._last_result_state = ""
+        # Dossiers introuvables au dernier cycle allé jusqu'au bout, et ceux déjà signalés par une notification.
+        self.missing_folders: tuple[MissingFolder, ...] = ()
+        self._notified_missing: frozenset[MissingFolder] = frozenset()
         self.state, self.message = self._idle_state()
 
         self.engine = SyncEngine(self.config, journal, self._make_client, on_event=self._engine_event.emit)
@@ -182,8 +203,10 @@ class AppController(QObject):
         self.auth_blocked = result.state == "auth_error"
         if result.state != self._last_result_state and result.state in STATE_NOTIFICATIONS:
             title_key, body_key = STATE_NOTIFICATIONS[result.state]
-            self.notification.emit(tr(title_key), tr(body_key) if body_key else render(result.message))
+            self.notification.emit(tr(title_key), tr(body_key))
         self._last_result_state = result.state
+        if result.state in COMPLETED_STATES:  # un cycle interrompu ne dit rien des dossiers
+            self._follow_missing_folders(result.missing)
         if self.config.paused:  # mis en pause pendant le cycle
             self._set_state("paused", "")
         else:
@@ -192,13 +215,28 @@ class AppController(QObject):
         if self._rerun_requested:
             self.sync_now()
 
+    def _follow_missing_folders(self, missing: tuple[MissingFolder, ...]) -> None:
+        """Notifie les dossiers qui viennent de devenir introuvables, pas ceux déjà signalés."""
+        new = [item for item in missing if item not in self._notified_missing]
+        self.missing_folders = tuple(missing)
+        self._notified_missing = frozenset(missing)
+        if new:
+            body = "\n".join(tr("cycle_folder_missing_show", folder=folder, show=show) for folder, show in new)
+            self.notification.emit(tr("notif_folder_missing"), body)
+
     def _on_baseline(self, result: CycleResult) -> None:
-        """Fichiers déjà présents ignorés : le dossier est noté comme pris en compte, puis le vrai cycle suit."""
-        if result.folder == self.config.watch_folder:  # sinon le dossier a changé : nouvel état des lieux
-            if not self.update_config(replace(self.config, baseline_folder=result.folder)):
+        """Fichiers déjà présents ignorés : les émissions de ces dossiers sont notées comme prises en compte,
+        puis le vrai cycle suit. Une émission dont le dossier a changé entre-temps aura son propre état des lieux."""
+        shows = [
+            replace(show, baseline_folder=show.folder)
+            if show.folder and any(same_folder(show.folder, folder) for folder in result.folders) else show
+            for show in self.config.shows
+        ]
+        if shows != self.config.shows:
+            if not self.update_config(replace(self.config, shows=shows)):
                 self._set_state("not_configured", msg("settings_not_saved"))
                 return
-            if result.count:
+            if result.count:  # 0 : dossier vide, ou déjà inventorié pour une autre émission
                 title_key, body_key = BASELINE_NOTIFICATION
                 self.notification.emit(tr(title_key), tr(body_key, count=result.count))
         if self.config.paused:
@@ -215,8 +253,8 @@ class AppController(QObject):
         """État hors cycle (démarrage, reprise après une pause), déduit des réglages et du journal."""
         if not self.has_token():
             return "not_configured", msg("cycle_enter_token")
-        if not self.config.watch_folder:
-            return "not_configured", msg("cycle_choose_folder")
+        if not watched_shows(self.config):
+            return "not_configured", msg("cycle_add_show")
         attention = self.journal.needing_attention()
         if attention:
             return "attention", msg("cycle_files_need_attention", n=len(attention))
@@ -228,6 +266,10 @@ class AppController(QObject):
 
     def has_token(self) -> bool:
         return get_token() is not None
+
+    def needs_setup(self) -> bool:
+        """Configuration complète : un jeton et au moins une émission avec son dossier."""
+        return not (self.has_token() and watched_shows(self.config))
 
     def update_config(self, config: Config) -> bool:
         """Enregistre et applique de nouveaux réglages. Ne jamais muter self.config en place.
@@ -246,12 +288,20 @@ class AppController(QObject):
         self.engine.config = config
         if config.interval_minutes != previous.interval_minutes:
             self._restart_timer()
-        if config.watch_folder != previous.watch_folder:
-            self._last_result_state = ""  # un dossier toujours introuvable sera de nouveau signalé
+        if _folder_keys(config) != _folder_keys(previous):
+            # Un dossier toujours introuvable, un jeton toujours refusé seront de nouveau signalés.
+            self._last_result_state = ""
+            self._notified_missing = frozenset()
+        # Dossier introuvable d'une émission retirée ou déplacée : oublié sans attendre le prochain cycle.
+        self.missing_folders = tuple(
+            (folder, label) for folder, label in self.missing_folders
+            if any(same_folder(show.folder, folder) and show_label(show) == label for show in config.shows)
+        )
         if config.paused:
             self._set_state("paused", "")
         elif previous.paused:
             self._set_state(*(("syncing", "") if self.busy else self._idle_state()))
+        self.config_changed.emit()
         self.activity_changed.emit()
         return True
 

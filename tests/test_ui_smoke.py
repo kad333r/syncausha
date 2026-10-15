@@ -7,12 +7,13 @@ from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton
 
 from syncausha import autostart, i18n
 from syncausha.ausha_client import Show
-from syncausha.config import Config, Rule, save_config
+from syncausha.config import Config, KeywordRule, Rule, ShowFolder, save_config
 from syncausha.i18n import msg, render, tr
 from syncausha.journal import Journal, Status
 from syncausha.ui import controller as controller_module
 from syncausha.ui import rules_page as rules_page_module
 from syncausha.ui import style
+from syncausha.ui import tray as tray_module
 from syncausha.ui.activity_page import ActivityPage
 from syncausha.ui.controller import AppController
 from syncausha.ui.main_window import ACTIVITY, MainWindow
@@ -76,6 +77,7 @@ def test_settings_are_saved_even_if_autostart_cannot_be_changed(qapp, tmp_path, 
 def controller(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(controller_module, "get_token", lambda: "jeton")
     monkeypatch.setattr(autostart, "is_enabled", lambda: False)
+    monkeypatch.setattr(autostart, "set_enabled", lambda enabled: None)  # jamais le vrai registre
     journal = Journal(tmp_path / "journal.db")
     controller = AppController(tmp_path / "config.json", journal)
     yield controller
@@ -92,6 +94,96 @@ def syncs(controller, monkeypatch):
 
 def texts(widget, kind):
     return [child.text() for child in widget.findChildren(kind)]
+
+
+def button(widget, text):
+    found = [b for b in widget.findChildren(QPushButton) if b.text() == text]
+    assert len(found) == 1, [b.text() for b in widget.findChildren(QPushButton)]
+    return found[0]
+
+
+def set_shows(controller, *shows):
+    assert controller.update_config(Config(shows=list(shows)))
+
+
+def test_activity_header_counts_the_watched_shows(controller, french):
+    set_shows(
+        controller,
+        ShowFolder(1, "Mars Attack", r"D:\Mars", r"D:\Mars"),
+        ShowFolder(2, "Silicon Talk", r"D:\Mars", r"D:\Mars"),
+        ShowFolder(3, "Sans dossier"),
+    )
+    page = ActivityPage(controller)
+    assert page.detail_label.text().startswith("Émissions surveillées : 2 · prochain passage dans")
+
+
+def test_activity_lists_missing_folders_with_a_button_to_edit_the_show(controller, french):
+    set_shows(controller, ShowFolder(1, "Mars Attack", r"D:\Mars", r"D:\Mars"), ShowFolder(2, "", r"E:\Silicon"))
+    controller.missing_folders = ((r"E:\Silicon", "2"),)  # émission sans nom : son id (comme le moteur)
+    page = ActivityPage(controller)
+    requested = []
+    page.edit_show_requested.connect(requested.append)
+    assert "À traiter" in texts(page, QLabel)
+    assert r"Dossier introuvable : E:\Silicon (2)" in texts(page, QLabel)
+    button(page, "Modifier l'émission").click()
+    assert requested == [1]
+
+
+def test_create_a_rule_opens_the_show_of_the_file_folder(controller, french):
+    controller.journal.ensure("h1", "interview_brut.mp3", 1, folder=r"D:\Podcasts")
+    controller.journal.update("h1", status=Status.SANS_REGLE, last_error=msg("err_no_rule"))
+    page = ActivityPage(controller)
+    requested = []
+    page.create_rule_requested.connect(lambda folder, keyword: requested.append((folder, keyword)))
+    button(page, "Créer une règle").click()
+    assert requested == [(r"D:\Podcasts", "interview_brut")]
+
+
+def test_a_broken_rule_opens_the_show_whose_keyword_matched(controller, french):
+    set_shows(
+        controller,
+        ShowFolder(1, "Silicon Talk", r"D:\Podcasts", r"D:\Podcasts", [KeywordRule("DEBRIEF")]),
+        ShowFolder(2, "Autre", r"E:\Autre", r"E:\Autre", [KeywordRule("MARS ATTACK")]),
+        ShowFolder(3, "Mars Attack", r"d:\podcasts", r"d:\podcasts", [KeywordRule("MARS ATTACK")]),
+    )
+    controller.journal.ensure("h1", "MARS ATTACK 13.mp3", 1, folder=r"D:\Podcasts")
+    controller.journal.update("h1", status=Status.REGLE_CASSEE, last_error=msg("rule_err_show_missing", show="Mars Attack"))
+    page = ActivityPage(controller)
+    requested = []
+    page.edit_show_requested.connect(requested.append)
+    button(page, "Modifier l'émission").click()
+    assert requested == [2]
+
+
+def test_settings_save_keeps_the_shows(controller, syncs):
+    shows = [ShowFolder(1, "Mars Attack", r"D:\Mars", r"D:\Mars", [KeywordRule("MARS ATTACK")])]
+    set_shows(controller, *shows)
+    page = SettingsPage(controller)
+    page.interval.setValue(30)
+    page._save()
+    assert controller.config.interval_minutes == 30
+    assert controller.config.shows == shows
+
+
+def test_tray_menu_opens_the_folder_of_each_watched_show(controller, monkeypatch):
+    opened = []
+    monkeypatch.setattr(tray_module.QDesktopServices, "openUrl", lambda url: opened.append(url.toLocalFile()))
+    tray = Tray(controller, MainWindow(controller))
+    menu = tray.folders_menu
+    assert menu.title() == "Open folder"
+    assert not menu.menuAction().isEnabled()  # aucune émission
+    set_shows(
+        controller,
+        ShowFolder(1, "Mars Attack", "D:/Mars", "D:/Mars"),
+        ShowFolder(2, "Sans dossier"),
+        ShowFolder(3, "", "E:/Silicon", "E:/Silicon"),
+    )
+    assert menu.menuAction().isEnabled()
+    assert [action.text() for action in menu.actions()] == ["Mars Attack — D:/Mars", "Show 3 — E:/Silicon"]
+    menu.actions()[1].trigger()
+    assert opened == ["E:/Silicon"]
+    set_shows(controller)
+    assert menu.actions() == [] and not menu.menuAction().isEnabled()
 
 
 def test_activity_lists_files_ignored_when_the_folder_was_chosen(controller, syncs, french):
@@ -195,7 +287,7 @@ def test_activity_shows_core_messages_in_the_current_language(controller):
 
 def test_tray_texts_follow_the_state(controller, syncs):
     tray = Tray(controller, MainWindow(controller))
-    assert tray.toolTip() == "SyncAusha — Setup incomplete"  # jeton présent, aucun dossier
+    assert tray.toolTip() == "SyncAusha — Setup incomplete"  # jeton présent, aucune émission
     controller.set_paused(True)
     assert tray.toolTip() == "SyncAusha — Paused"
     assert tray.pause_action.text() == "Resume sync"

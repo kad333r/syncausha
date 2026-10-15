@@ -13,7 +13,6 @@ STATE_COLORS = {
     "baseline": "#2F6FDB",
     "attention": "#E39B17",
     "not_configured": "#E39B17",
-    "folder_missing": "#E39B17",
     "paused": "#8A8984",
     "auth_error": "#D93A2F",
     "offline": "#D93A2F",

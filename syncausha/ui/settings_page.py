@@ -1,7 +1,6 @@
-"""Page Réglages : langue, jeton, dossier, intervalle, démarrage, pause, essai à blanc."""
+"""Page Réglages : langue, jeton, intervalle, démarrage, pause, essai à blanc (communs à toutes les émissions)."""
 from __future__ import annotations
 
-import os
 from dataclasses import replace
 
 from PySide6.QtCore import Qt, QUrl, Signal
@@ -9,7 +8,6 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QFileDialog,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -69,16 +67,6 @@ class SettingsPage(QWidget):
         token_field.addWidget(self.test_result)
         form.addRow(tr("settings_field_token"), token_field)
 
-        self.folder = QLineEdit()
-        self.folder.setAlignment(leading_alignment() | Qt.AlignmentFlag.AlignVCenter)  # chemin latin à droite en arabe
-        self.folder.setReadOnly(True)
-        folder_button = QPushButton(tr("common_choose"))
-        folder_button.clicked.connect(self._choose_folder)
-        folder_row = QHBoxLayout()
-        folder_row.addWidget(self.folder, 1)
-        folder_row.addWidget(folder_button)
-        form.addRow(tr("settings_field_folder"), folder_row)
-
         self.interval = QSpinBox()
         self.interval.setRange(MIN_INTERVAL, MAX_INTERVAL)
         self.interval.setSuffix(tr("settings_interval_suffix"))
@@ -122,7 +110,6 @@ class SettingsPage(QWidget):
         self.token.setPlaceholderText(
             tr("settings_token_saved_placeholder") if self.controller.has_token() else tr("settings_token_placeholder")
         )
-        self.folder.setText(config.watch_folder)
         self.interval.setValue(config.interval_minutes)
         self.autostart.setChecked(autostart.is_enabled())
         self.paused.setChecked(config.paused)
@@ -142,11 +129,6 @@ class SettingsPage(QWidget):
         if paused != self._saved_paused:  # un simple début ou fin de cycle ne touche pas la case
             self._saved_paused = paused
             self.paused.setChecked(paused)
-
-    def _choose_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, tr("dialog_choose_folder"), self.folder.text())
-        if folder:
-            self.folder.setText(os.path.normpath(folder))
 
     def _test(self) -> None:
         self._show_test_result(tr("settings_connecting"))
@@ -178,7 +160,6 @@ class SettingsPage(QWidget):
         config = replace(
             self.controller.config,
             language=chosen if picked else self.controller.config.language,
-            watch_folder=self.folder.text(),
             interval_minutes=self.interval.value(),
             paused=self.paused.isChecked(),
             dry_run=self.dry_run.isChecked(),
