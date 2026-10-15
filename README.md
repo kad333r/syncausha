@@ -18,7 +18,7 @@ Automatically publishes to [Ausha](https://www.ausha.co) the podcasts you drop i
 
 **A file is published only if its name contains one of its show's keywords.**
 
-**Files already in a folder when you add its show (or change the show's folder) are not published**: only files added afterwards are. To publish one of them anyway, open **Activity → Ignored** and click **Publish anyway** (one file at a time).
+**Files already in a folder when you add its show (or change the show's folder) are not published**, unless another show already watches that folder (see **How it works**): only files added afterwards are. To publish one of them anyway, open **Activity → Ignored** and click **Publish anyway** (one file at a time).
 
 To update, run the new `SyncAusha-Setup.exe`: SyncAusha is closed automatically (an upload in progress resumes at the next launch) and your settings are kept. Settings from version 1.0 are converted automatically on first launch: each show used in your rules becomes a show with the old watched folder and the keywords of its rules (playlist, cover image and description unchanged). Nothing is republished and no file is newly ignored. If a file name matches keywords of several shows, the order of the shows in **Shows** now decides. If you had no rules yet, add your shows in **Shows**.
 
@@ -38,7 +38,7 @@ SyncAusha is available in English, French and Arabic.
 - The episode is created **and published immediately** (live for your listeners, no draft or scheduling), titled after the file name, then gets its cover image and is added to the playlist.
 - A file whose name contains none of its show's keywords is never uploaded: it shows up in **Activity → Needs attention**, where **Create a rule** opens its show with a new keyword pre-filled from the file name.
 - Several shows can use the same folder: the shows are tried in their order in **Shows**, then each show's keywords in their order, and the first match wins. Drag shows and keywords to change their order.
-- Only files added to a folder after it was chosen for a show are published; those already there are listed in **Activity → Ignored**. Adding a show to a folder that another show already watches ignores nothing: files waiting there for a keyword are published as soon as they match the new show's keywords.
+- When a folder is chosen for a show, the files already in it are ignored (listed in **Activity → Ignored**) and only files added afterwards are published. Exception: adding a show to (or moving a show to) a folder that another show already watches ignores nothing; files waiting there for a keyword are published as soon as they match that show's keywords.
 - A folder that can't be found (renamed, drive unplugged…) doesn't stop the other shows: you get a single **Folder not found** notification, and the folder is listed in **Activity → Needs attention** with **Edit show**.
 - The tray icon's **Open folder** menu lists each show's folder.
 - Files stay in their folder; `%APPDATA%\SyncAusha\journal.db` keeps track of what has been published (a renamed file, or one copied into another show's folder, isn't uploaded again). Before publishing, SyncAusha also checks that no episode with the same title already exists on Ausha.

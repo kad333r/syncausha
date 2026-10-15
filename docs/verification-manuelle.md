@@ -33,18 +33,20 @@
 - [ ] « Publier quand même » sur l'un d'eux (son nom contient un mot-clé de l'émission) : il est publié aussitôt, les autres restent ignorés.
 - [ ] Un fichier ajouté au dossier après coup est publié au passage suivant.
 - [ ] Ajouter une émission sur un dossier vide : pas de notification « Dossier pris en compte ».
-- [ ] Changer le dossier d'une émission (« Choisir… » puis « Enregistrer ») : les fichiers déjà présents dans le nouveau dossier sont ignorés à leur tour, rien n'est publié ; un fichier ajouté ensuite est publié.
+- [ ] Changer le dossier d'une émission vers un dossier non surveillé par une autre émission (« Choisir… » puis « Enregistrer ») : les fichiers déjà présents dans le nouveau dossier sont ignorés à leur tour, rien n'est publié ; un fichier ajouté ensuite est publié.
+- [ ] Dossier abandonné puis repris : déplacer une émission du dossier A vers le dossier B, déposer dans A un fichier qui contient un de ses mots-clés, puis ramener l'émission sur A : A est réanalysé (« Dossier pris en compte »), ce fichier est ignoré, rien n'est publié.
 - [ ] Deux émissions dans deux dossiers : chaque fichier part dans l'émission de son dossier, avec la playlist, l'image et la description de son mot-clé.
 - [ ] Fichier déposé dans le dossier de l'émission A dont le nom ne contient qu'un mot-clé de l'émission B (autre dossier) : il n'est pas envoyé (« Aucune règle »).
 - [ ] Dossier partagé : deux émissions sur le même dossier, chacune avec son mot-clé ; un fichier de chacune part dans la bonne émission.
 - [ ] Dossier partagé : un fichier dont le nom contient les mots-clés des deux émissions part dans la première de la liste ; après avoir glissé l'autre en tête, le fichier suivant de ce type part dans celle-ci.
 - [ ] Ajouter une seconde émission sur un dossier déjà surveillé : pas de notification « Dossier pris en compte », aucun fichier ignoré ; un fichier qui y attendait (« Aucune règle ») et contient un mot-clé de la nouvelle émission est publié.
+- [ ] Déplacer une émission vers un dossier déjà surveillé par une autre émission : pas de notification « Dossier pris en compte », aucun fichier ignoré ; un fichier qui y attendait (« Aucune règle ») et contient un mot-clé de l'émission déplacée est publié.
 - [ ] Renommer le dossier d'une émission (ou débrancher son disque) : une seule notification « Dossier introuvable » ; icône orange ; Activité → « À traiter » affiche « Dossier introuvable : … (nom de l'émission) » avec « Modifier l'émission », qui ouvre cette émission.
 - [ ] Pendant ce temps, un fichier déposé dans le dossier d'une autre émission est publié normalement.
 - [ ] Le dossier reste introuvable plusieurs passages : pas de nouvelle notification. Une fois le dossier rétabli, la ligne disparaît au passage suivant.
 - [ ] Conversion depuis la 1.0 (installer la 1.1 par-dessus une 1.0 dont les règles visent deux émissions) : la page Émissions liste deux émissions, dans l'ordre de leur première règle, chacune avec l'ancien dossier surveillé et les mots-clés de ses règles dans leur ordre d'origine (playlist, image et description inchangées).
 - [ ] Après la conversion : pas de notification « Dossier pris en compte », rien n'est republié sur Ausha ; les fichiers ignorés en 1.0 restent dans « Ignorés », Activité → Récent garde les épisodes publiés en 1.0 ; un nouveau fichier part dans la bonne émission.
-- [ ] Le log contient « Réglages 1.0 convertis : 2 émission(s) dans … » ; `config.json` garde l'ancien format jusqu'au premier enregistrement, puis contient `shows` (plus de `watch_folder` ni de `rules`).
+- [ ] Le log contient « Réglages 1.0 convertis : 2 émission(s) dans … » ; `config.json` garde l'ancien format jusqu'au premier enregistrement, puis contient `shows` (plus de `watch_folder` ni de `rules` au premier niveau).
 - [ ] Conversion d'une 1.0 sans aucune règle : aucune émission créée, la fenêtre s'ouvre sur Émissions.
 
 ## Synchro (sur une émission de test)
