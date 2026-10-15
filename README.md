@@ -2,7 +2,7 @@
 
 # SyncAusha
 
-Automatically publishes to [Ausha](https://www.ausha.co) the podcasts you drop into a folder on your PC.
+Automatically publishes to [Ausha](https://www.ausha.co) the podcasts you drop into folders on your PC, one folder per show.
 
 ## Install
 
@@ -10,13 +10,17 @@ Automatically publishes to [Ausha](https://www.ausha.co) the podcasts you drop i
 2. Keep **Start SyncAusha when Windows starts** checked.
 3. On first launch, the window opens on **Settings**:
    - paste your Ausha token (Ausha → My account → Public API; PRO or Supersonic plan required), then click **Test connection**;
-   - choose the folder to watch and the check interval;
-   - tick **Dry run** for a first check that publishes nothing.
-4. In **Rules**, add one rule per series: keyword (e.g. `MARS ATTACK`), show, playlist, cover image, description.
+   - choose the check interval (**Check every**);
+   - tick **Dry run** for a first check that publishes nothing;
+   - click **Save**.
+4. In **Shows**, click **Add a show** for each of your Ausha shows: choose the **Ausha show**, then its **Folder** (**Choose…**, anywhere on your PC), and click **Save**.
+5. Still in **Shows**, give each show at least one keyword with **Add a keyword**: in **File name contains**, the text to look for (e.g. `MARS ATTACK`), then the **Playlist**, **Cover image** and **Description**, and click **Save**. A show can have several keywords, for example one per series.
 
-**Files already in the folder when you choose it are not published**: only files added afterwards are. To publish one of them anyway, open **Activity → Ignored** and click **Publish anyway** (one file at a time). Choosing another folder sorts its files the same way.
+**A file is published only if its name contains one of its show's keywords.**
 
-To update, run the new `SyncAusha-Setup.exe`: SyncAusha is closed automatically (an upload in progress resumes at the next launch) and your settings are kept.
+**Files already in a folder when you add its show (or change the show's folder) are not published**: only files added afterwards are. To publish one of them anyway, open **Activity → Ignored** and click **Publish anyway** (one file at a time).
+
+To update, run the new `SyncAusha-Setup.exe`: SyncAusha is closed automatically (an upload in progress resumes at the next launch) and your settings are kept. Settings from version 1.0 are converted automatically on first launch: each show used in your rules becomes a show with the old watched folder and the keywords of its rules (playlist, cover image and description unchanged). Nothing is republished and no file is newly ignored. If a file name matches keywords of several shows, the order of the shows in **Shows** now decides. If you had no rules yet, add your shows in **Shows**.
 
 ## Languages
 
@@ -29,11 +33,15 @@ SyncAusha is available in English, French and Arabic.
 
 ## How it works
 
-- Every X minutes, each audio file (`.mp3 .m4a .wav .ogg .flac .mp4`) in the folder that hasn't changed for 30 s is matched against the rules. The first rule whose keyword appears in the file name applies (case, accents and punctuation are ignored: `_`, `-`, apostrophes…). Empty files and hidden files (name starting with `.` or `~$`) are ignored.
+- Each show has its own folder, chosen anywhere on your PC. The folder sets the Ausha show; the keyword sets the playlist, cover image and description.
+- Every X minutes, each audio file (`.mp3 .m4a .wav .ogg .flac .mp4`) directly in a show's folder (subfolders aren't read) that hasn't changed for 30 s is matched against that show's keywords. The first keyword that appears in the file name applies (case, accents and punctuation are ignored: `_`, `-`, apostrophes…). Empty files and hidden files (name starting with `.` or `~$`) are ignored.
 - The episode is created **and published immediately** (live for your listeners, no draft or scheduling), titled after the file name, then gets its cover image and is added to the playlist.
-- Only files added to the folder after it was chosen are published; those already there are listed in **Activity → Ignored**.
-- A file with no matching rule is never uploaded: it shows up in **Activity → Needs attention**.
-- Files stay in the folder; `%APPDATA%\SyncAusha\journal.db` keeps track of what has been published (a renamed file isn't uploaded again). Before publishing, SyncAusha also checks that no episode with the same title already exists on Ausha.
+- A file whose name contains none of its show's keywords is never uploaded: it shows up in **Activity → Needs attention**, where **Create a rule** opens its show with a new keyword pre-filled from the file name.
+- Several shows can use the same folder: the shows are tried in their order in **Shows**, then each show's keywords in their order, and the first match wins. Drag shows and keywords to change their order.
+- Only files added to a folder after it was chosen for a show are published; those already there are listed in **Activity → Ignored**. Adding a show to a folder that another show already watches ignores nothing: files waiting there for a keyword are published as soon as they match the new show's keywords.
+- A folder that can't be found (renamed, drive unplugged…) doesn't stop the other shows: you get a single **Folder not found** notification, and the folder is listed in **Activity → Needs attention** with **Edit show**.
+- The tray icon's **Open folder** menu lists each show's folder.
+- Files stay in their folder; `%APPDATA%\SyncAusha\journal.db` keeps track of what has been published (a renamed file, or one copied into another show's folder, isn't uploaded again). Before publishing, SyncAusha also checks that no episode with the same title already exists on Ausha.
 
 ## Develop
 
@@ -56,7 +64,7 @@ Output: `dist\SyncAusha-Setup.exe`.
 
 ## Files
 
-- Settings: `%APPDATA%\SyncAusha\config.json` (the token is stored in Windows Credential Manager; answering "Yes" to the question asked during uninstall deletes this folder and the token)
+- Settings, including the shows, their folders and keywords: `%APPDATA%\SyncAusha\config.json` (the token is stored in Windows Credential Manager; answering "Yes" to the question asked during uninstall deletes this folder and the token)
 - History: `%APPDATA%\SyncAusha\journal.db`
 - Logs: `%APPDATA%\SyncAusha\logs\syncausha.log`
 - Language chosen in the installer: `HKCU\Software\SyncAusha` (`Language` value, removed on uninstall)
