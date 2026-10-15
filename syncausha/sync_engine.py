@@ -174,7 +174,8 @@ class SyncEngine:
         """Lit chaque dossier distinct une fois ; un dossier introuvable est signalé sans arrêter les autres."""
         catalog: dict[int, set[int]] | None = None  # chargé au premier fichier qui a du travail
         seen: set[str] = set()
-        hashed_names: set[str] = set()
+        # Noms présents mais pas lus à ce cycle (fichier pas encore prêt, illisible), dossier par dossier : leur
+        # entrée est gardée. Un homonyme lu dans un autre dossier ne compte pas.
         present: set[str] = set()
         missing: list[tuple[str, str]] = []
         for folder, group in _by_folder(shows):
@@ -187,6 +188,7 @@ class SyncEngine:
             if ready_files is None:
                 missing += _missing(folder, group)
                 continue
+            hashed_names: set[str] = set()
             for ready in ready_files:
                 if self.cancel_event.is_set():
                     return CycleResult("paused", STOP_MESSAGE)
@@ -212,7 +214,7 @@ class SyncEngine:
                     log.exception("Erreur inattendue sur %s", ready.path.name)
                     self._record_failure(file_hash, episode_title(ready.path), msg("err_unexpected", detail=exc))
             try:
-                present |= {path.name for path in Path(folder).iterdir()}
+                present |= {path.name for path in Path(folder).iterdir()} - hashed_names
             except OSError as exc:
                 log.warning("Dossier illisible %s : %s", folder, exc)
                 missing += _missing(folder, group)
@@ -222,7 +224,7 @@ class SyncEngine:
             message = msg("cycle_folder_missing_show", folder=folder, show=show)
             return CycleResult("attention", message, missing=tuple(missing))
         # Un fichier réexporté sous le même nom (nouveau hash) libère l'entrée de l'ancienne version.
-        self.journal.forget_unresolved(seen, present - hashed_names)
+        self.journal.forget_unresolved(seen, present)
         attention = self.journal.needing_attention()
         if attention:
             return CycleResult("attention", msg("cycle_files_need_attention", n=len(attention)))

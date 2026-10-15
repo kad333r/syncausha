@@ -963,3 +963,30 @@ def test_missing_folder_of_an_unnamed_show_gets_its_fallback_name(env, tmp_path)
     assert result.missing == ((absent, msg("shows_fallback_name", id=2)),)
     assert render(result.message, lang="en") == f"Folder not found: {absent} (Show 2)"
     assert render(result.message, lang="fr") == f"Dossier introuvable : {absent} (Émission 2)"
+
+
+def test_file_not_ready_keeps_its_ignored_entry_when_another_folder_has_a_file_of_the_same_name(env, tmp_path):
+    # Le fichier prêt d'un dossier ne doit pas faire oublier son homonyme d'un autre dossier, sinon ce dernier
+    # (ignoré à l'état des lieux) serait publié une fois prêt.
+    other = tmp_path / "silicon"; other.mkdir()
+    env.client.shows[2] = "Silicon Talk"; env.client.playlists[2] = {}; env.client.episodes[2] = []
+    env.config.shows[0].baseline_folder = ""
+    env.config.shows.append(ShowFolder(show_id=2, show_name="Silicon Talk", folder=str(other),
+                                       rules=[KeywordRule("MARS ATTACK")]))
+    add_file(env, "INTRO MARS ATTACK.mp3", b"mars")
+    (other / "INTRO MARS ATTACK.mp3").write_bytes(b"silicon")
+    copying = set()
+
+    def scan(path):
+        return [ready for ready in scan_ready_files(path, min_age_seconds=0) if ready.path not in copying]
+
+    engine = SyncEngine(env.config, env.journal, lambda cfg, cancel: env.client, scan=scan)
+    assert engine.run_cycle().count == 2
+    for show in env.config.shows:
+        show.baseline_folder = show.folder
+    copying.add(other / "INTRO MARS ATTACK.mp3")  # retouché : pas encore prêt
+    assert engine.run_cycle().state == "ok"
+    copying.clear()
+    assert engine.run_cycle().state == "ok"
+    assert env.client.calls == []
+    assert sorted(e.folder for e in env.journal.ignored()) == sorted([str(env.folder), str(other)])
