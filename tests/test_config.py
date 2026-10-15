@@ -251,3 +251,24 @@ def test_unchosen_language_is_kept_without_warning(tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="syncausha.config"):
         assert load_config(path).language == ""
     assert caplog.records == []
+
+
+def test_v1_conversion_warns_when_grouping_by_show_changes_the_priority(caplog):
+    # 1.0 : « DEBRIEF » (Silicon Talk) passait avant « MARS » (Mars Attack) ; regroupées, les règles de Mars passent avant.
+    rules = [
+        {"keyword": "MARS ATTACK", "show_id": 1, "show_name": "Mars Attack"},
+        {"keyword": "DEBRIEF", "show_id": 2, "show_name": "Silicon Talk"},
+        {"keyword": "MARS", "show_id": 1, "show_name": "Mars Attack"},
+    ]
+    with caplog.at_level(logging.WARNING, logger="syncausha.config"):
+        Config.from_dict({"watch_folder": "D:/P", "rules": rules})
+    [record] = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert "priorité" in record.getMessage()
+    assert "Mars Attack : MARS ATTACK, MARS ; Silicon Talk : DEBRIEF" in record.getMessage()
+
+
+def test_v1_conversion_does_not_warn_when_the_priority_is_kept(caplog):
+    rules = [{"keyword": "MARS ATTACK", "show_id": 1}, {"keyword": "MARS", "show_id": 1}, {"keyword": "DEBRIEF", "show_id": 2}]
+    with caplog.at_level(logging.WARNING, logger="syncausha.config"):
+        Config.from_dict({"watch_folder": "D:/P", "rules": rules})
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []

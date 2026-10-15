@@ -230,6 +230,7 @@ def _convert_v1(data: dict) -> list[ShowFolder]:
     folder = data.get("watch_folder") if isinstance(data.get("watch_folder"), str) else ""
     baseline = data.get("baseline_folder") if isinstance(data.get("baseline_folder"), str) else ""
     shows: dict[int, ShowFolder] = {}
+    order: list[int] = []  # émission de chaque règle valide, dans l'ordre 1.0 (la priorité d'alors)
     raw = data.get("rules")
     for item in raw if isinstance(raw, list) else []:
         rule = Rule.from_dict(item)
@@ -240,8 +241,17 @@ def _convert_v1(data: dict) -> list[ShowFolder]:
         show.rules.append(
             KeywordRule(rule.keyword, rule.playlist_id, rule.playlist_name, rule.image_path, rule.description_template)
         )
+        order.append(rule.show_id)
     if shows:
         log.info("Réglages 1.0 convertis : %d émission(s) dans %s", len(shows), folder)
+    if order != sorted(order, key=order.index):  # une émission revient après une autre : la priorité change
+        log.warning(
+            "Réglages 1.0 : règles regroupées par émission, la priorité entre mots-clés d'émissions différentes "
+            "change (ordre des émissions, puis de leurs mots-clés) ; vérifiez l'ordre dans la page Émissions. "
+            "Nouvel ordre : %s",
+            " ; ".join(f"{show.show_name or show.show_id} : {', '.join(r.keyword for r in show.rules)}"
+                       for show in shows.values()),
+        )
     return list(shows.values())
 
 
