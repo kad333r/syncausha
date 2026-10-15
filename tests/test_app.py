@@ -1,5 +1,7 @@
 import ctypes
+import logging
 import os
+import sqlite3
 import subprocess
 import sys
 import uuid
@@ -58,3 +60,29 @@ def test_running_mutex_is_visible_to_the_installer():
     assert opened
     kernel32.CloseHandle(opened)
     kernel32.CloseHandle(handle)
+
+
+class FakeApplication:
+    """QApplication de remplacement : le vrai est déjà créé pour la session de tests."""
+
+    def __init__(self, argv):
+        pass
+
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None
+
+
+def test_inaccessible_journal_stops_the_start_with_a_clear_log_line(user, tmp_path, monkeypatch, caplog):
+    def read_only(path):
+        raise sqlite3.OperationalError("attempt to write a readonly database")
+
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)  # remplacé par main
+    monkeypatch.setattr(app_module, "QApplication", FakeApplication)
+    for name in ("setup_logging", "apply_style", "watch_color_scheme", "_create_mutex"):
+        monkeypatch.setattr(app_module, name, lambda *args: None)
+    monkeypatch.setattr(app_module, "open_journal", read_only)
+    monkeypatch.setattr(app_module, "AppController", lambda *args: pytest.fail("démarrage sans journal"))
+    with caplog.at_level(logging.CRITICAL, logger="syncausha.app"):
+        assert app_module.main(["SyncAusha.exe", "--minimized"]) == 1
+    [record] = [r for r in caplog.records if r.levelno == logging.CRITICAL]
+    assert "journal.db" in record.getMessage() and "attempt to write a readonly database" in record.getMessage()

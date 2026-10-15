@@ -203,16 +203,30 @@ class Journal:
 
 def open_journal(path: Path) -> Journal:
     """Ouvre le journal ; si le fichier est corrompu, le met de côté (journal.db.corrompu)
-    et repart d'un journal neuf plutôt que de planter au démarrage."""
+    et repart d'un journal neuf plutôt que de planter au démarrage.
+
+    Toute autre erreur (fichier en lecture seule, disque, verrou) remonte : le journal est
+    peut-être intact, et repartir d'un journal vide ferait republier les fichiers ignorés."""
     try:
         return Journal(path)
     except sqlite3.DatabaseError as exc:
+        if not _is_corrupt(exc):
+            raise
         log.warning("Journal illisible (%s), il est mis de côté", exc)
         try:
             os.replace(path, path.with_name(path.name + ".corrompu"))
         except OSError:
             pass
         return Journal(path)
+
+
+def _is_corrupt(exc: sqlite3.DatabaseError) -> bool:
+    """Fichier abîmé ou qui n'est pas une base SQLite (code d'erreur, sinon message)."""
+    code = getattr(exc, "sqlite_errorcode", None)
+    if code is not None:
+        return code & 0xFF in (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB)  # code principal
+    text = str(exc).lower()
+    return "malformed" in text or "not a database" in text
 
 
 def _placeholders(values: tuple) -> str:

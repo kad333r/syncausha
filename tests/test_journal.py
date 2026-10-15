@@ -1,5 +1,7 @@
 import itertools
+import os
 import sqlite3
+import stat
 
 import pytest
 
@@ -236,4 +238,62 @@ def test_open_journal_quarantines_corrupt_file_and_starts_fresh(tmp_path):
         assert j.get("h1") is entry or j.get("h1") == entry
     finally:
         j.close()
+    assert (tmp_path / "journal.db.corrompu").exists()
+
+
+def test_open_journal_quarantines_a_malformed_database(tmp_path):
+    path = tmp_path / "journal.db"
+    make_v1_database(path)
+    data = bytearray(path.read_bytes())
+    data[100:400] = b"\xff" * 300  # première page abîmée : « database disk image is malformed »
+    path.write_bytes(bytes(data))
+    open_journal(path).close()
+    assert (tmp_path / "journal.db.corrompu").exists()
+
+
+@pytest.fixture
+def read_only_v1_journal(tmp_path):
+    """Journal 1.0 intact mais en lecture seule : la migration (écriture) échoue."""
+    path = tmp_path / "journal.db"
+    make_v1_database(path)
+    os.chmod(path, stat.S_IREAD)
+    yield path
+    os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
+
+
+def test_open_journal_keeps_a_valid_journal_it_cannot_write(read_only_v1_journal):
+    # Mettre de côté l'historique 1.0 ferait republier les anciens fichiers ignorés.
+    with pytest.raises(sqlite3.OperationalError):
+        open_journal(read_only_v1_journal)
+    assert sorted(p.name for p in read_only_v1_journal.parent.iterdir()) == ["journal.db"]
+    assert read_user_version(read_only_v1_journal) == 1
+
+
+def test_open_journal_raises_other_errors_without_quarantine(tmp_path, monkeypatch):
+    path = tmp_path / "journal.db"
+    make_v1_database(path)
+
+    def locked(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(journal_module, "Journal", locked)
+    with pytest.raises(sqlite3.OperationalError):
+        open_journal(path)
+    assert not (tmp_path / "journal.db.corrompu").exists()
+
+
+def test_open_journal_recognizes_corruption_by_its_message_without_error_code(tmp_path, monkeypatch):
+    path = tmp_path / "journal.db"
+    path.write_bytes(b"x")
+    real_journal = journal_module.Journal
+    attempts = []
+
+    def first_fails(*args, **kwargs):
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise sqlite3.DatabaseError("file is not a database")  # sans sqlite_errorcode
+        return real_journal(*args, **kwargs)
+
+    monkeypatch.setattr(journal_module, "Journal", first_fails)
+    open_journal(path).close()
     assert (tmp_path / "journal.db.corrompu").exists()

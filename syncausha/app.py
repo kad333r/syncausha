@@ -7,14 +7,16 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import sys
+from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from syncausha import __version__
 from syncausha.config import app_data_dir, set_token
 from syncausha.i18n import resolve_language
-from syncausha.journal import open_journal
+from syncausha.journal import Journal, open_journal
 from syncausha.logging_setup import setup_logging
 from syncausha.ui.controller import AppController
 from syncausha.ui.icons import app_icon
@@ -54,7 +56,10 @@ def main(argv: list[str] | None = None) -> int:
 
     apply_style(app)
     watch_color_scheme(app)
-    journal = open_journal(data_dir / "journal.db")
+    journal = _open_journal(data_dir / "journal.db")
+    if journal is None:
+        instance.close()
+        return 1
     controller = AppController(data_dir / "config.json", journal)
     language = resolve_language(controller.config.language)  # réglages, puis installateur, puis anglais
     apply_language(app, language)
@@ -79,6 +84,20 @@ def main(argv: list[str] | None = None) -> int:
         os._exit(code)
     journal.close()
     return code
+
+
+def _open_journal(path: Path) -> Journal | None:
+    """Journal des publications, ou None s'il est inaccessible (lecture seule, disque, verrou) : SyncAusha
+    ne démarre pas, plutôt que de repartir d'un journal vide qui ferait republier les fichiers ignorés."""
+    try:
+        return open_journal(path)
+    except (sqlite3.Error, OSError) as exc:
+        log.critical(
+            "Journal %s inaccessible (%s) : SyncAusha ne démarre pas, pour ne rien republier. Vérifiez qu'il "
+            "est accessible en écriture (lecture seule, disque plein, autre programme), puis relancez.",
+            path, exc,
+        )
+        return None
 
 
 def _forget_token() -> int:
