@@ -178,10 +178,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Activité",
         "ar": "النشاط",
     },
-    "nav_rules": {
-        "en": "Rules",
-        "fr": "Règles",
-        "ar": "القواعد",
+    "nav_shows": {
+        "en": "Shows",
+        "fr": "Émissions",
+        "ar": "البرامج",
     },
     "nav_settings": {
         "en": "Settings",
@@ -355,24 +355,81 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "En attente",
         "ar": "في الانتظار",
     },
-    # --- Page Règles -------------------------------------------------------------
-    "rules_title": {
-        "en": "Rules",
-        "fr": "Règles",
-        "ar": "القواعد",
+    # --- Page Émissions : émissions et leurs dossiers -----------------------------
+    "shows_title": {
+        "en": "Shows",
+        "fr": "Émissions",
+        "ar": "البرامج",
     },
-    "rules_add": {
-        "en": "Add",
-        "fr": "Ajouter",
-        "ar": "إضافة",
+    "shows_add": {
+        "en": "Add a show",
+        "fr": "Ajouter une émission",
+        "ar": "إضافة برنامج",
     },
-    "rules_intro": {
-        "en": "The first rule whose keyword appears in the file name applies. "
-        "Drag rules to change their order.",
-        "fr": "La première règle dont le mot-clé apparaît dans le nom du fichier s'applique. "
-        "Glissez les règles pour changer l'ordre.",
-        "ar": "تُطبَّق أول قاعدة تظهر كلمتها المفتاحية في اسم الملف. اسحب القواعد لتغيير ترتيبها.",
+    "shows_help": {
+        "en": "Each show has its own folder. Inside it, a file is published only if its name contains one of "
+        "the show's keywords.",
+        "fr": "Chaque émission a son propre dossier. Un fichier de ce dossier n'est publié que si son nom contient "
+        "un des mots-clés de l'émission.",
+        "ar": "لكل برنامج مجلده الخاص. لا يُنشر ملف من هذا المجلد إلا إذا احتوى اسمه على إحدى الكلمات المفتاحية "
+        "للبرنامج.",
     },
+    "shows_field_show": {
+        "en": "Ausha show",
+        "fr": "Émission Ausha",
+        "ar": "برنامج Ausha",
+    },
+    "shows_show_placeholder": {
+        "en": "Choose a show",
+        "fr": "Choisissez une émission",
+        "ar": "اختر برنامجًا",
+    },
+    "shows_field_folder": {
+        "en": "Folder",
+        "fr": "Dossier",
+        "ar": "المجلد",
+    },
+    "shows_no_folder": {
+        "en": "No folder chosen",
+        "fr": "Aucun dossier choisi",
+        "ar": "لم يُختر أي مجلد",
+    },
+    "shows_keyword_count": {
+        "en": "Keywords: {n}",
+        "fr": "Mots-clés : {n}",
+        "ar": "الكلمات المفتاحية: {n}",
+    },
+    "shows_delete": {
+        "en": "Delete show",
+        "fr": "Supprimer l'émission",
+        "ar": "حذف البرنامج",
+    },
+    "shows_err_folder": {
+        "en": "Choose a folder.",
+        "fr": "Choisissez un dossier.",
+        "ar": "اختر مجلدًا.",
+    },
+    "shows_not_saved": {
+        "en": "Show not saved.",
+        "fr": "Émission non enregistrée.",
+        "ar": "لم يُحفظ البرنامج.",
+    },
+    "shows_keywords": {
+        "en": "Keywords",
+        "fr": "Mots-clés",
+        "ar": "الكلمات المفتاحية",
+    },
+    "shows_add_keyword": {
+        "en": "Add a keyword",
+        "fr": "Ajouter un mot-clé",
+        "ar": "إضافة كلمة مفتاحية",
+    },
+    "shows_save_show_first": {
+        "en": "Save the show to add its keywords.",
+        "fr": "Enregistrez l'émission pour ajouter ses mots-clés.",
+        "ar": "احفظ البرنامج لإضافة كلماته المفتاحية.",
+    },
+    # --- Page Émissions : mots-clés (règles) d'une émission -----------------------
     "rules_keyword_placeholder": {
         "en": "MARS ATTACK",
         "fr": "MARS ATTACK",
@@ -382,11 +439,6 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "File name contains",
         "fr": "Le nom du fichier contient",
         "ar": "اسم الملف يحتوي على",
-    },
-    "rules_field_show": {
-        "en": "Show",
-        "fr": "Émission",
-        "ar": "البرنامج",
     },
     "rules_field_playlist": {
         "en": "Playlist",
@@ -442,11 +494,6 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Playlist {id}",
         "fr": "Playlist {id}",
         "ar": "قائمة التشغيل {id}",
-    },
-    "rules_show_and_playlist": {
-        "en": "{show} → {playlist}",
-        "fr": "{show} → {playlist}",
-        "ar": "{show} \u200f←\u200f {playlist}",  # RLM autour de la flèche : de droite à gauche entre deux noms latins
     },
     "rules_no_playlist": {
         "en": "No playlist",
@@ -580,20 +627,35 @@ CATALOG: dict[str, dict[str, str]] = {
         "ar": "لم يُعدَّل خيار التشغيل مع بدء Windows: {detail}",
     },
     # --- Boîtes de dialogue ------------------------------------------------------
+    "dialog_choose_show_folder": {
+        "en": "Show folder",
+        "fr": "Dossier de l'émission",
+        "ar": "مجلد البرنامج",
+    },
+    "dialog_delete_show": {
+        "en": "Delete show",
+        "fr": "Supprimer l'émission",
+        "ar": "حذف البرنامج",
+    },
+    "dialog_delete_show_question": {
+        "en": "Delete the show “{show}” and its keywords? Nothing is deleted from its folder or from Ausha.",
+        "fr": "Supprimer l'émission « {show} » et ses mots-clés ? Rien n'est supprimé dans son dossier ni sur Ausha.",
+        "ar": "هل تريد حذف البرنامج «{show}» وكلماته المفتاحية؟ لن يُحذف أي شيء من مجلده ولا من Ausha.",
+    },
+    "dialog_delete_keyword": {
+        "en": "Delete keyword",
+        "fr": "Supprimer le mot-clé",
+        "ar": "حذف الكلمة المفتاحية",
+    },
+    "dialog_delete_keyword_question": {
+        "en": "Delete the keyword “{keyword}”?",
+        "fr": "Supprimer le mot-clé « {keyword} » ?",
+        "ar": "هل تريد حذف الكلمة المفتاحية «{keyword}»؟",
+    },
     "dialog_choose_image": {
         "en": "Choose a cover image",
         "fr": "Choisir l'image",
         "ar": "اختيار صورة الغلاف",
-    },
-    "dialog_delete_rule": {
-        "en": "Delete rule",
-        "fr": "Supprimer la règle",
-        "ar": "حذف القاعدة",
-    },
-    "dialog_delete_rule_question": {
-        "en": "Delete the rule “{keyword}”?",
-        "fr": "Supprimer la règle « {keyword} » ?",
-        "ar": "هل تريد حذف القاعدة «{keyword}»؟",
     },
     # --- Icône de la zone de notification ----------------------------------------
     "tray_tooltip": {

@@ -8,10 +8,10 @@ from syncausha.i18n import tr
 from syncausha.ui.activity_page import ActivityPage
 from syncausha.ui.controller import AppController
 from syncausha.ui.language import apply_language
-from syncausha.ui.rules_page import RulesPage
 from syncausha.ui.settings_page import SettingsPage
+from syncausha.ui.shows_page import ShowsPage
 
-ACTIVITY, RULES, SETTINGS = 0, 1, 2
+ACTIVITY, SHOWS, SETTINGS = 0, 1, 2
 
 
 class MainWindow(QMainWindow):
@@ -21,10 +21,10 @@ class MainWindow(QMainWindow):
     def __init__(self, controller: AppController) -> None:
         super().__init__()
         self.controller = controller
-        self.resize(880, 600)
+        self.resize(880, 660)  # page Émissions entière sans défilement
         self.setMinimumSize(720, 480)
         self._build()
-        self.go_to(SETTINGS if self.needs_setup() else ACTIVITY)
+        self.go_to(self._first_page())
 
     def _build(self) -> None:
         """Construit le contenu dans la langue active ; l'ancien, s'il existe, est détruit par Qt."""
@@ -36,19 +36,19 @@ class MainWindow(QMainWindow):
         self.sidebar = QListWidget()
         self.sidebar.setObjectName("sidebar")
         self.sidebar.setFixedWidth(170)
-        self.sidebar.addItems([tr("nav_activity"), tr("nav_rules"), tr("nav_settings")])
+        self.sidebar.addItems([tr("nav_activity"), tr("nav_shows"), tr("nav_settings")])
         self.stack = QStackedWidget()
         self.activity = ActivityPage(self.controller)
-        self.rules = RulesPage(self.controller)
+        self.shows = ShowsPage(self.controller)
         self.settings = SettingsPage(self.controller)
-        for page in (self.activity, self.rules, self.settings):
+        for page in (self.activity, self.shows, self.settings):
             self.stack.addWidget(page)
         layout.addWidget(self.sidebar)
         layout.addWidget(self.stack, 1)
 
         self.sidebar.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.activity.create_rule_requested.connect(self.open_new_rule)
-        self.activity.edit_rules_requested.connect(lambda: self.go_to(RULES))
+        self.activity.edit_show_requested.connect(self.open_show)
         self.settings.language_changed.connect(self._on_language_changed)
         self.setCentralWidget(central)  # l'ancien contenu central est supprimé (deleteLater)
         # Fenêtre visible : contenu affiché tout de suite, pas au prochain tour de boucle (qui
@@ -73,15 +73,27 @@ class MainWindow(QMainWindow):
         self.language_changed.emit()
 
     def needs_setup(self) -> bool:
-        return not (self.controller.has_token() and self.controller.config.watch_folder)
+        return self.controller.needs_setup()
+
+    def _first_page(self) -> int:
+        """Réglages sans jeton, Émissions sans émission surveillée, sinon Activité."""
+        if not self.controller.has_token():
+            return SETTINGS
+        return SHOWS if self.needs_setup() else ACTIVITY
 
     def go_to(self, index: int) -> None:
         self.sidebar.setCurrentRow(index)
         self.stack.setCurrentIndex(index)
 
-    def open_new_rule(self, keyword: str) -> None:
-        self.go_to(RULES)
-        self.rules.start_new_rule(keyword)
+    def open_new_rule(self, folder: str, keyword: str) -> None:
+        """« Créer une règle » : l'émission du dossier du fichier, avec le mot-clé proposé."""
+        self.go_to(SHOWS)
+        self.shows.start_new_rule(folder, keyword)
+
+    def open_show(self, index: int) -> None:
+        """« Modifier l'émission » : la page Émissions sur cette émission (-1 : la page seulement)."""
+        self.go_to(SHOWS)
+        self.shows.select_show(index)
 
     def show_and_raise(self) -> None:
         self.showNormal()

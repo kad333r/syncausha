@@ -17,7 +17,7 @@ from syncausha.ui import style
 from syncausha.ui.activity_page import format_time, state_text
 from syncausha.ui.controller import AppController
 from syncausha.ui.language import apply_language
-from syncausha.ui.main_window import RULES, SETTINGS, MainWindow
+from syncausha.ui.main_window import SETTINGS, SHOWS, MainWindow
 from syncausha.ui.settings_page import SettingsPage
 from syncausha.ui.tray import Tray
 
@@ -127,13 +127,14 @@ def test_apply_language_swaps_the_qt_translator(qapp):
 
 
 def test_rebuild_translates_and_keeps_page(qapp, window):
-    window.go_to(RULES)
+    window.go_to(SHOWS)
     assert window.sidebar.item(0).text() == "Activity"
     apply_language(qapp, "fr")
     window.rebuild()
     assert window.sidebar.item(0).text() == tr("nav_activity") == "Activité"
-    assert window.stack.currentIndex() == RULES
-    assert window.sidebar.currentRow() == RULES
+    assert window.stack.currentIndex() == SHOWS
+    assert window.sidebar.currentRow() == SHOWS
+    assert window.sidebar.item(SHOWS).text() == "Émissions"
 
 
 def test_settings_language_change_rebuilds_window(qapp, window):
@@ -163,7 +164,7 @@ def test_rebuild_waits_until_the_settings_page_has_returned(qapp, window, errors
 
 
 def test_old_pages_are_destroyed_and_no_longer_called(qapp, window, controller, errors):
-    old = (window.activity, window.rules, window.settings, window.sidebar, window.stack)
+    old = (window.activity, window.shows, window.settings, window.sidebar, window.stack)
     choose_language(qapp, window, "ar")
     delete_later_now()
     assert not any(shiboken6.isValid(widget) for widget in old)

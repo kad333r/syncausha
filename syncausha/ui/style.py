@@ -71,10 +71,10 @@ QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid $border_stro
 QCheckBox::indicator:hover { border-color: $accent; }
 QCheckBox::indicator:checked { background: $accent; border-color: $accent; image: url("$check"); }
 QCheckBox::indicator:checked:hover { background: $accent_hover; border-color: $accent_hover; }
-QListWidget#rules { background: $surface; border: 1px solid $border; border-radius: 8px; outline: 0; padding: 4px; }
-QListWidget#rules::item { padding: 6px; border-radius: 6px; }
-QListWidget#rules::item:hover { background: $hover; }
-QListWidget#rules::item:selected { background: $selected; color: $text; }
+QListWidget#items { background: $surface; border: 1px solid $border; border-radius: 8px; outline: 0; padding: 4px; }
+QListWidget#items::item { padding: 6px; border-radius: 6px; }
+QListWidget#items::item:hover { background: $hover; }
+QListWidget#items::item:selected { background: $selected; color: $text; }
 QFrame#card QLabel#imagePreview { background: $hover; border: 1px solid $border; border-radius: 8px; color: $muted; }
 QLabel[pill="success"] { background: $success_bg; color: $success; border-radius: 6px; padding: 2px 8px; }
 QLabel[pill="warning"] { background: $warning_bg; color: $warning; border-radius: 6px; padding: 2px 8px; }

@@ -3,21 +3,18 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QTextDocument
-from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton
+from PySide6.QtWidgets import QLabel, QPushButton
 
 from syncausha import autostart, i18n
-from syncausha.ausha_client import Show
-from syncausha.config import Config, KeywordRule, Rule, ShowFolder, save_config
+from syncausha.config import Config, KeywordRule, ShowFolder, save_config
 from syncausha.i18n import msg, render, tr
 from syncausha.journal import Journal, Status
 from syncausha.ui import controller as controller_module
-from syncausha.ui import rules_page as rules_page_module
 from syncausha.ui import style
 from syncausha.ui import tray as tray_module
 from syncausha.ui.activity_page import ActivityPage
 from syncausha.ui.controller import AppController
-from syncausha.ui.main_window import ACTIVITY, MainWindow
-from syncausha.ui.rules_page import RulesPage
+from syncausha.ui.main_window import ACTIVITY, SETTINGS, SHOWS, MainWindow
 from syncausha.ui.settings_page import SettingsPage
 from syncausha.ui.tray import Tray
 from syncausha.ui.widgets import Row, bidi_text
@@ -26,27 +23,50 @@ from syncausha.ui.widgets import Row, bidi_text
 def test_main_window_builds_and_navigates(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(controller_module, "get_token", lambda: None)
     config_path = tmp_path / "config.json"
-    save_config(
-        Config(watch_folder=str(tmp_path), rules=[Rule(keyword="MARS ATTACK", show_id=1, show_name="Mars Attack")]),
-        config_path,
-    )
+    show = ShowFolder(1, "Mars Attack", str(tmp_path), str(tmp_path), [KeywordRule("MARS ATTACK")])
+    save_config(Config(shows=[ShowFolder(2, "Autre", r"Z:\Autre"), show]), config_path)
     journal = Journal(tmp_path / "journal.db")
-    journal.ensure("h1", "interview_brut.mp3", 1)
+    journal.ensure("h1", "interview_brut.mp3", 1, folder=str(tmp_path))
     journal.update("h1", status=Status.SANS_REGLE, last_error="Aucune règle ne correspond")
-    journal.ensure("h2", "MARS ATTACK 12.mp3", 1)
+    journal.ensure("h2", "MARS ATTACK 12.mp3", 1, folder=str(tmp_path))
     journal.update("h2", status=Status.PUBLIE, show_name="Mars Attack")
     controller = AppController(config_path, journal)
     window = MainWindow(controller)
     try:
         assert window.needs_setup()
-        assert window.stack.currentWidget() is window.settings
-        window.open_new_rule("interview_brut")
-        assert window.stack.currentWidget() is window.rules
-        assert window.rules.keyword.text() == "interview_brut"
-        assert window.rules.list.count() == 1
+        assert window.stack.currentWidget() is window.settings  # pas de jeton
+        [create_rule] = [b for b in window.activity.findChildren(QPushButton) if b.text() == tr("activity_create_rule")]
+        create_rule.click()
+        assert window.stack.currentWidget() is window.shows
+        assert window.sidebar.currentRow() == SHOWS
+        assert window.shows.show_list.count() == 2
+        assert window.shows.show_list.currentRow() == 1  # l'émission du dossier du fichier
+        assert window.shows.keyword.text() == "interview_brut"
         window.go_to(ACTIVITY)
         window.activity.refresh()
         assert window.stack.currentWidget() is window.activity
+        window.activity.edit_show_requested.emit(0)
+        assert window.stack.currentWidget() is window.shows
+        assert window.shows.show_list.currentRow() == 0
+    finally:
+        controller.shutdown()
+        journal.close()
+
+
+@pytest.mark.parametrize(
+    "token,shows,page",
+    [(None, [], SETTINGS), ("jeton", [], SHOWS), ("jeton", [ShowFolder(1, "Sans dossier")], SHOWS),
+     ("jeton", [ShowFolder(1, "Mars Attack", r"D:\Mars")], ACTIVITY)],
+)
+def test_main_window_opens_where_setup_is_missing(qapp, tmp_path, monkeypatch, token, shows, page):
+    monkeypatch.setattr(controller_module, "get_token", lambda: token)
+    save_config(Config(shows=shows), tmp_path / "config.json")
+    journal = Journal(tmp_path / "journal.db")
+    controller = AppController(tmp_path / "config.json", journal)
+    try:
+        window = MainWindow(controller)
+        assert window.stack.currentIndex() == page
+        assert window.needs_setup() is (page != ACTIVITY)
     finally:
         controller.shutdown()
         journal.close()
@@ -238,24 +258,6 @@ def test_settings_page_reports_settings_that_cannot_be_saved(controller, syncs, 
     assert page.saved_label.text() == "Réglages non enregistrés"
     assert controller.config.interval_minutes == 15
     assert syncs == []
-
-
-def test_saving_or_deleting_a_rule_runs_a_sync(controller, syncs, monkeypatch):
-    monkeypatch.setattr(rules_page_module.QMessageBox, "question", lambda *args: QMessageBox.StandardButton.Yes)
-    page = RulesPage(controller)
-    page.catalog = {Show(1, "Mars Attack"): []}
-    page.keyword.setText("interview")
-    page._fill_shows()
-    page._save()
-    assert [r.keyword for r in controller.config.rules] == ["interview"]
-    assert syncs == [True]
-    page._delete()
-    assert controller.config.rules == []
-    assert syncs == [True, True]
-    controller.update_config(Config(paused=True))
-    page.keyword.setText("interview")
-    page._save()
-    assert syncs == [True, True]  # en pause : rien n'est lancé
 
 
 def test_activity_refresh_hides_the_previous_rows_at_once(controller):
