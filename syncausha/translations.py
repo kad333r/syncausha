@@ -107,6 +107,16 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Dossier introuvable : {folder}",
         "ar": "المجلد غير موجود: {folder}",
     },
+    "cycle_add_show": {
+        "en": "Add a show and its folder in Shows.",
+        "fr": "Ajoutez une émission et son dossier dans Émissions.",
+        "ar": "أضف برنامجًا ومجلده في صفحة البرامج.",
+    },
+    "cycle_folder_missing_show": {
+        "en": "Folder not found: {folder} ({show})",
+        "fr": "Dossier introuvable : {folder} ({show})",
+        "ar": "المجلد غير موجود: {folder} ({show})",
+    },
     "cycle_enter_token": {
         "en": "Enter your Ausha token.",
         "fr": "Renseignez votre jeton Ausha.",

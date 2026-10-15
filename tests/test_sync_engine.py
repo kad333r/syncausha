@@ -6,7 +6,7 @@ from PIL import Image
 
 import syncausha.sync_engine as sync_engine
 from syncausha.ausha_client import AuthError, Cancelled, Episode, Playlist, RejectedError, Show, TransientError
-from syncausha.config import Config, Rule
+from syncausha.config import Config, KeywordRule, ShowFolder, same_folder
 from syncausha.i18n import render
 from syncausha.journal import Journal, Status, Step
 from syncausha.scanner import scan_ready_files
@@ -80,17 +80,12 @@ def env(tmp_path):
     folder.mkdir()
     image = tmp_path / "mars.png"
     Image.new("RGB", (1400, 1400), "red").save(image)
-    rule = Rule(
-        keyword="MARS ATTACK",
-        show_id=1,
-        show_name="Mars Attack",
-        playlist_id=7,
-        playlist_name="Saison 3",
-        image_path=str(image),
-        description_template="Nouvel épisode",
+    rule = KeywordRule(
+        "MARS ATTACK", playlist_id=7, playlist_name="Saison 3", image_path=str(image), description_template="Nouvel épisode"
     )
     # Dossier déjà pris en compte : les fichiers ajoutés par les tests sont publiés.
-    config = Config(watch_folder=str(folder), baseline_folder=str(folder), rules=[rule])
+    show = ShowFolder(show_id=1, show_name="Mars Attack", folder=str(folder), baseline_folder=str(folder), rules=[rule])
+    config = Config(shows=[show])
     clock = SimpleNamespace(now=1_000_000.0)  # horloge commune au journal et au moteur
     journal = Journal(tmp_path / "journal.db", clock=lambda: clock.now)
     client = FakeClient()
@@ -174,7 +169,7 @@ def test_file_without_rule_is_flagged_once(env):
 def test_file_is_published_once_a_rule_exists(env):
     add_file(env, "interview_brut.mp3")
     env.engine.run_cycle()
-    env.config.rules.append(Rule(keyword="interview", show_id=1, show_name="Mars Attack"))
+    env.config.shows[0].rules.append(KeywordRule("interview"))
     assert env.engine.run_cycle().state == "ok"
     assert env.client.calls == [("create", 1, "interview_brut", "", "interview_brut.mp3")]
 
@@ -192,7 +187,8 @@ def test_broken_rule_blocks_upload(env):
 
 def test_refused_show_does_not_stop_other_shows(env):
     env.client.shows[2] = "Silicon Talk"
-    env.config.rules.append(Rule(keyword="SILICON", show_id=2, show_name="Silicon Talk"))
+    env.config.shows.append(ShowFolder(show_id=2, show_name="Silicon Talk", folder=str(env.folder),
+                                       baseline_folder=str(env.folder), rules=[KeywordRule("SILICON")]))
     env.client.fail["list_playlists:2"] = [RejectedError("Forbidden")]
     add_file(env, "MARS ATTACK 13.mp3", b"mars")
     add_file(env, "SILICON TALK 4.mp3", b"silicon")
@@ -358,11 +354,11 @@ def test_paused_and_unconfigured_states(env, tmp_path):
     env.config.paused = True
     assert env.engine.run_cycle().state == "paused"
     env.config.paused = False
-    env.config.watch_folder = ""
+    env.config.shows[0].folder = ""
     assert env.engine.run_cycle().state == "not_configured"
-    env.config.watch_folder = str(tmp_path / "absent")
-    assert env.engine.run_cycle().state == "folder_missing"
-    env.config.watch_folder = str(env.folder)
+    env.config.shows[0].folder = str(tmp_path / "absent")
+    assert env.engine.run_cycle().state == "attention"  # dossier introuvable : signalé, ne bloque plus le cycle
+    env.config.shows[0].folder = str(env.folder)
     no_token = SyncEngine(env.config, env.journal, lambda cfg, cancel: None)
     assert no_token.run_cycle().state == "not_configured"
 
@@ -555,7 +551,7 @@ def test_nothing_to_do_makes_no_api_call(env, monkeypatch):
     assert env.client.calls == []
 
 
-def test_folder_listing_error_gives_folder_missing(env, monkeypatch):
+def test_folder_listing_error_reports_the_folder_as_missing(env, monkeypatch):
     add_file(env, "MARS ATTACK 13.mp3")
     ready = scan_ready_files(env.folder, min_age_seconds=0)
     engine = SyncEngine(env.config, env.journal, lambda cfg, cancel: env.client, scan=lambda path: ready)
@@ -564,22 +560,24 @@ def test_folder_listing_error_gives_folder_missing(env, monkeypatch):
         raise PermissionError("accès refusé")
 
     monkeypatch.setattr(Path, "iterdir", broken)
-    assert engine.run_cycle().state == "folder_missing"
+    result = engine.run_cycle()
+    assert (result.state, result.missing) == ("attention", ((str(env.folder), "Mars Attack"),))
 
 
-def test_scan_error_gives_folder_missing(env):
+def test_scan_error_reports_the_folder_as_missing(env):
     def broken(path):
         raise PermissionError("accès refusé")
 
     engine = SyncEngine(env.config, env.journal, lambda cfg, cancel: env.client, scan=broken)
-    assert engine.run_cycle().state == "folder_missing"
+    result = engine.run_cycle()
+    assert (result.state, result.missing) == ("attention", ((str(env.folder), "Mars Attack"),))
 
 
 # --- Fichiers déjà présents au choix du dossier ---------------------------------
 
 
 def test_files_present_when_the_folder_is_chosen_are_ignored_without_calling_ausha(env):
-    env.config.baseline_folder = ""
+    env.config.shows[0].baseline_folder = ""
     add_file(env, "MARS ATTACK 12.mp3", b"12")
     add_file(env, "interview_brut.mp3", b"interview")
     factory_calls = []
@@ -588,7 +586,7 @@ def test_files_present_when_the_folder_is_chosen_are_ignored_without_calling_aus
         on_event=env.events.append, scan=lambda path: scan_ready_files(path, min_age_seconds=0),
     )
     result = engine.run_cycle()
-    assert (result.state, result.count, result.folder) == ("baseline", 2, str(env.folder))
+    assert (result.state, result.count, result.folders) == ("baseline", 2, (str(env.folder),))
     assert render(result.message, lang="fr") == "Fichiers déjà présents ignorés : 2"
     assert factory_calls == []
     assert env.client.reads == [] and env.client.calls == []
@@ -598,10 +596,10 @@ def test_files_present_when_the_folder_is_chosen_are_ignored_without_calling_aus
 
 
 def test_only_files_added_after_the_baseline_are_published(env):
-    env.config.baseline_folder = ""
+    env.config.shows[0].baseline_folder = ""
     add_file(env, "MARS ATTACK 12.mp3", b"12")
     assert env.engine.run_cycle().state == "baseline"
-    env.config.baseline_folder = env.config.watch_folder
+    env.config.shows[0].baseline_folder = env.config.shows[0].folder
     add_file(env, "MARS ATTACK 13.mp3", b"13")
     assert env.engine.run_cycle().state == "ok"
     env.engine.run_cycle()
@@ -610,10 +608,10 @@ def test_only_files_added_after_the_baseline_are_published(env):
 
 
 def test_ignored_file_is_published_once_requested(env):
-    env.config.baseline_folder = ""
+    env.config.shows[0].baseline_folder = ""
     add_file(env, "MARS ATTACK 12.mp3", b"12")
     env.engine.run_cycle()
-    env.config.baseline_folder = env.config.watch_folder
+    env.config.shows[0].baseline_folder = env.config.shows[0].folder
     (ignored,) = env.journal.ignored()
     env.journal.reset_for_retry(ignored.hash)  # « Publier quand même »
     assert env.engine.run_cycle().state == "ok"
@@ -629,9 +627,9 @@ def test_changing_the_folder_takes_a_new_baseline(env, tmp_path):
     other.mkdir()
     (other / "MARS ATTACK 12.mp3").write_bytes(b"12")  # même contenu : reste publié
     (other / "MARS ATTACK 13.mp3").write_bytes(b"13")
-    env.config.watch_folder = str(other)
+    env.config.shows[0].folder = str(other)
     result = env.engine.run_cycle()
-    assert (result.state, result.count, result.folder) == ("baseline", 1, str(other))
+    assert (result.state, result.count, result.folders) == ("baseline", 1, (str(other),))
     assert creates(env) == ["MARS ATTACK 12"]
     assert [e.filename for e in env.journal.ignored()] == ["MARS ATTACK 13.mp3"]
     assert [e.status for e in env.journal.recent()] == [Status.PUBLIE]
@@ -644,23 +642,23 @@ def test_baseline_leaves_an_upload_in_progress_alone(env):
     file_hash = env.journal.file_hash(path, st.st_size, st.st_mtime)
     env.journal.ensure(file_hash, path.name, st.st_size)
     env.journal.update(file_hash, step=Step.UPLOADING, status=Status.EN_ATTENTE, show_id=1)
-    env.config.baseline_folder = ""
+    env.config.shows[0].baseline_folder = ""
     assert env.engine.run_cycle().count == 0
     assert env.journal.get(file_hash).status is Status.EN_ATTENTE
 
 
 def test_files_still_being_copied_are_not_part_of_the_baseline(env):
-    env.config.baseline_folder = ""
+    env.config.shows[0].baseline_folder = ""
     add_file(env, "MARS ATTACK 13.mp3")
     still_copying = SyncEngine(env.config, env.journal, lambda cfg, cancel: env.client, scan=scan_ready_files)
     assert still_copying.run_cycle().count == 0
-    env.config.baseline_folder = env.config.watch_folder
+    env.config.shows[0].baseline_folder = env.config.shows[0].folder
     env.engine.run_cycle()
     assert creates(env) == ["MARS ATTACK 13"]
 
 
 def test_stopping_during_the_baseline(env):
-    env.config.baseline_folder = ""
+    env.config.shows[0].baseline_folder = ""
     add_file(env, "MARS ATTACK 13.mp3")
     env.engine.cancel()
     assert env.engine.run_cycle().state == "paused"
@@ -733,7 +731,8 @@ def test_rule_moved_to_another_show_mid_publication_is_flagged(env):
     env.engine.run_cycle()
     assert only_entry(env).step is Step.CREATED
     env.client.shows[2] = "Silicon Talk"
-    env.config.rules[0] = Rule(keyword="MARS ATTACK", show_id=2, show_name="Silicon Talk")
+    env.config.shows[0] = ShowFolder(show_id=2, show_name="Silicon Talk", folder=str(env.folder),
+                                     baseline_folder=str(env.folder), rules=[KeywordRule("MARS ATTACK")])
     env.client.calls.clear()
     env.client.reads.clear()
     assert env.engine.run_cycle().state == "attention"
@@ -757,16 +756,20 @@ def test_messages_are_translatable(env):
 
 
 def test_cycle_messages_are_translatable(env, tmp_path):
-    env.config.watch_folder = str(tmp_path / "absent")
+    env.config.shows[0].folder = str(tmp_path / "absent")
     result = env.engine.run_cycle()
-    assert render(result.message, lang="en") == f"Folder not found: {tmp_path / 'absent'}"
-    assert render(result.message, lang="fr") == f"Dossier introuvable : {tmp_path / 'absent'}"
-    env.config.watch_folder = str(env.folder)
-    env.config.baseline_folder = ""
+    assert render(result.message, lang="en") == f"Folder not found: {tmp_path / 'absent'} (Mars Attack)"
+    assert render(result.message, lang="fr") == f"Dossier introuvable : {tmp_path / 'absent'} (Mars Attack)"
+    env.config.shows[0].folder = str(env.folder)
+    env.config.shows[0].baseline_folder = ""
     add_file(env, "MARS ATTACK 12.mp3")
     result = env.engine.run_cycle()
     assert render(result.message, lang="en") == "Existing files ignored: 1"
     assert render(result.message, lang="ar") == "الملفات الموجودة مسبقًا المتجاهَلة: 1"
+    env.config.shows.clear()
+    result = env.engine.run_cycle()
+    assert render(result.message, lang="en") == "Add a show and its folder in Shows."
+    assert render(result.message, lang="fr") == "Ajoutez une émission et son dossier dans Émissions."
 
 
 def test_partial_publication_keeps_the_ausha_detail_in_every_language(env):
@@ -776,3 +779,123 @@ def test_partial_publication_keeps_the_ausha_detail_in_every_language(env):
     stored = only_entry(env).last_error
     assert render(stored, lang="en") == "Episode published, but it couldn't be added to the playlist: Refus"
     assert render(stored, lang="ar").endswith(": \u2068Refus\u2069")  # détail d'Ausha isolé
+
+
+# --- Un dossier par émission -----------------------------------------------------
+
+
+def test_each_show_publishes_its_own_folder(env, tmp_path):
+    other = tmp_path / "silicon"; other.mkdir()
+    env.client.shows[2] = "Silicon Talk"; env.client.playlists[2] = {}; env.client.episodes[2] = []
+    env.config.shows.append(ShowFolder(show_id=2, show_name="Silicon Talk", folder=str(other), baseline_folder=str(other),
+                                       rules=[KeywordRule("DEBRIEF")]))
+    add_file(env, "MARS ATTACK 12.mp3")
+    (other / "LE DEBRIEF 44.mp3").write_bytes(b"debrief")
+    assert env.engine.run_cycle().state == "ok"
+    created = [(c[1], c[2]) for c in env.client.calls if c[0] == "create"]
+    assert sorted(created) == [(1, "MARS ATTACK 12"), (2, "LE DEBRIEF 44")]
+
+
+def test_file_in_show_folder_without_keyword_is_not_sent(env):
+    add_file(env, "Episode 12.mp3")
+    assert env.engine.run_cycle().state == "attention"
+    assert env.client.calls == [] and only_entry(env).status is Status.SANS_REGLE
+
+
+def test_keyword_of_another_folder_does_not_apply(env, tmp_path):
+    other = tmp_path / "silicon"; other.mkdir()
+    env.config.shows.append(ShowFolder(show_id=2, show_name="Silicon Talk", folder=str(other), baseline_folder=str(other),
+                                       rules=[KeywordRule("DEBRIEF")]))
+    add_file(env, "LE DEBRIEF 44.mp3")  # dans le dossier de Mars Attack
+    env.engine.run_cycle()
+    assert env.client.calls == [] and only_entry(env).status is Status.SANS_REGLE
+
+
+def test_shared_folder_uses_show_order(env):
+    env.client.shows[2] = "Silicon Talk"; env.client.playlists[2] = {}; env.client.episodes[2] = []
+    env.config.shows.insert(0, ShowFolder(show_id=2, show_name="Silicon Talk", folder=env.config.shows[0].folder,
+                                          baseline_folder=env.config.shows[0].folder, rules=[KeywordRule("ATTACK")]))
+    add_file(env, "MARS ATTACK 12.mp3")
+    env.engine.run_cycle()
+    assert [c[1] for c in env.client.calls if c[0] == "create"] == [2]
+
+
+def test_missing_folder_does_not_block_other_shows(env, tmp_path):
+    env.config.shows.append(ShowFolder(show_id=1, show_name="Mars Attack", folder=str(tmp_path / "absent"),
+                                       baseline_folder=str(tmp_path / "absent"), rules=[KeywordRule("X")]))
+    add_file(env, "MARS ATTACK 12.mp3")
+    result = env.engine.run_cycle()
+    assert result.state == "attention"
+    assert result.missing == ((str(tmp_path / "absent"), "Mars Attack"),)
+    assert [c[0] for c in env.client.calls].count("create") == 1
+
+
+def test_missing_folder_keeps_the_files_it_ignored(env, tmp_path):
+    # Disque débranché : ses fichiers ignorés ne doivent pas être oubliés, puis publiés à son retour.
+    other = tmp_path / "silicon"; other.mkdir()
+    env.client.shows[2] = "Silicon Talk"; env.client.playlists[2] = {}; env.client.episodes[2] = []
+    env.config.shows.append(ShowFolder(show_id=2, show_name="Silicon Talk", folder=str(other),
+                                       rules=[KeywordRule("DEBRIEF")]))
+    (other / "LE DEBRIEF 43.mp3").write_bytes(b"ancien")
+    assert env.engine.run_cycle().state == "baseline"
+    env.config.shows[1].baseline_folder = str(other)
+    other.rename(tmp_path / "debranche")
+    add_file(env, "MARS ATTACK 12.mp3")
+    assert env.engine.run_cycle().missing == ((str(other), "Silicon Talk"),)
+    (tmp_path / "debranche").rename(other)
+    assert env.engine.run_cycle().state == "ok"
+    assert creates(env) == ["MARS ATTACK 12"]
+    assert [e.filename for e in env.journal.ignored()] == ["LE DEBRIEF 43.mp3"]
+
+
+def test_baseline_per_show(env, tmp_path):
+    new_folder = tmp_path / "nouvelle"; new_folder.mkdir()
+    (new_folder / "MARS ATTACK ancien.mp3").write_bytes(b"old")
+    env.config.shows.append(ShowFolder(show_id=1, show_name="Mars Attack", folder=str(new_folder),
+                                       rules=[KeywordRule("MARS ATTACK")]))
+    add_file(env, "MARS ATTACK 12.mp3")  # dossier déjà inventorié : publiable
+    result = env.engine.run_cycle()
+    assert result.state == "baseline" and result.count == 1
+    assert result.folders == (str(new_folder),)
+    assert env.client.calls == []
+
+
+def test_shared_folder_baselined_once(env):
+    shared = env.config.shows[0].folder
+    for show in env.config.shows:
+        show.baseline_folder = ""
+    env.config.shows.append(ShowFolder(show_id=2, show_name="Silicon Talk", folder=shared, rules=[KeywordRule("X")]))
+    add_file(env, "MARS ATTACK 12.mp3")
+    result = env.engine.run_cycle()
+    assert result.state == "baseline" and result.count == 1 and result.folders == (shared,)
+
+
+def test_journal_records_folder(env):
+    add_file(env, "MARS ATTACK 12.mp3")
+    env.engine.run_cycle()
+    assert same_folder(only_entry(env).folder, env.config.shows[0].folder)
+
+
+def test_baseline_records_folder(env):
+    env.config.shows[0].baseline_folder = ""
+    add_file(env, "MARS ATTACK 12.mp3")
+    env.engine.run_cycle()
+    (ignored,) = env.journal.ignored()
+    assert same_folder(ignored.folder, env.config.shows[0].folder)
+
+
+def test_no_show_with_folder_is_not_configured(env):
+    env.config.shows[0].folder = ""
+    assert env.engine.run_cycle().state == "not_configured"
+
+
+def test_converted_1_0_settings_publish_nothing_again(env):
+    add_file(env, "MARS ATTACK 12.mp3")
+    env.engine.run_cycle()
+    folder = str(env.folder)
+    settings_1_0 = {"watch_folder": folder, "baseline_folder": folder,
+                    "rules": [{"keyword": "MARS ATTACK", "show_id": 1, "show_name": "Mars Attack"}]}
+    env.engine.config = Config.from_dict(settings_1_0)
+    add_file(env, "MARS ATTACK 13.mp3", b"13")
+    assert env.engine.run_cycle().state == "ok"
+    assert creates(env) == ["MARS ATTACK 12", "MARS ATTACK 13"]

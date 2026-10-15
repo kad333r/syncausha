@@ -1,4 +1,4 @@
-"""Un cycle de synchronisation : dossier → règles → Ausha. Aucune dépendance à Qt."""
+"""Un cycle de synchronisation : dossiers des émissions → mots-clés → Ausha. Aucune dépendance à Qt."""
 from __future__ import annotations
 
 import html
@@ -19,10 +19,10 @@ from syncausha.ausha_client import (
     RejectedError,
     TransientError,
 )
-from syncausha.config import Config, Rule
+from syncausha.config import Config, Rule, ShowFolder, same_folder
 from syncausha.i18n import msg, render
 from syncausha.journal import FINAL_STATUSES, Entry, Journal, Status, Step
-from syncausha.rules import episode_description, episode_title, find_rule, validate_rule
+from syncausha.rules import episode_description, episode_title, find_match, validate_rule
 from syncausha.scanner import ReadyFile, scan_ready_files
 
 log = logging.getLogger(__name__)
@@ -51,14 +51,17 @@ class Event:
 
 @dataclass(frozen=True)
 class CycleResult:
-    """État global après un cycle : ok, attention, paused, not_configured, folder_missing, auth_error, offline,
-    ou baseline (count fichiers déjà présents dans folder ont été ignorés, rien n'a été publié).
-    message : message traduisible (i18n.msg)."""
+    """État global après un cycle : ok, attention, paused, not_configured, auth_error, offline,
+    ou baseline (count fichiers déjà présents dans les dossiers folders ont été ignorés, rien n'a été publié ;
+    chaque dossier est écrit comme dans les réglages).
+    message : message traduisible (i18n.msg).
+    missing : (dossier, émission) introuvables ou illisibles pendant ce cycle (état attention)."""
 
     state: str
     message: str = ""
     count: int = 0
-    folder: str = ""
+    folders: tuple[str, ...] = ()
+    missing: tuple[tuple[str, str], ...] = ()
 
 
 class PartiallyPublished(RejectedError):
@@ -91,13 +94,14 @@ class SyncEngine:
         config = self.config
         if config.paused:
             return CycleResult("paused")
-        if not config.watch_folder:
-            return CycleResult("not_configured", msg("cycle_choose_folder"))
-        folder = Path(config.watch_folder)
-        if not folder.is_dir():
-            return CycleResult("folder_missing", msg("cycle_folder_missing", folder=folder))
-        if config.watch_folder != config.baseline_folder:
-            return self._take_baseline(folder, config.watch_folder)
+        shows = [show for show in config.shows if show.folder]
+        if not shows:
+            return CycleResult("not_configured", msg("cycle_add_show"))
+        pending = [show for show in shows if show.needs_baseline()]
+        if pending:
+            baseline = self._take_baselines(pending)
+            if baseline is not None:
+                return baseline
         try:
             client = self._client_factory(config, self.cancel_event)
         except AuthError as exc:
@@ -106,7 +110,7 @@ class SyncEngine:
         if client is None:
             return CycleResult("not_configured", msg("cycle_enter_token"))
         try:
-            return self._run(config, folder, client)
+            return self._run(config, shows, client)
         except Cancelled:
             log.info("Synchronisation interrompue")
             return CycleResult("paused", STOP_MESSAGE)
@@ -119,72 +123,90 @@ class SyncEngine:
         finally:
             client.close()
 
-    def _take_baseline(self, folder: Path, watch_folder: str) -> CycleResult:
-        """Dossier tout juste choisi : ses fichiers prêts sont ignorés (statut « ignore »), sans appel à Ausha.
+    def _take_baselines(self, pending: list[ShowFolder]) -> CycleResult | None:
+        """Dossiers tout juste choisis : leurs fichiers prêts sont ignorés (statut « ignore »), sans appel à Ausha.
 
+        Un dossier partagé par plusieurs émissions n'est lu qu'une fois. Un dossier introuvable ou
+        illisible est laissé au cycle normal, qui le signale ; None si aucun dossier n'a pu être lu.
         Un fichier encore en cours de copie n'est pas concerné : il sera publié une fois prêt.
         Une entrée déjà envoyée (étape au-delà de « none ») non plus : son épisode existe peut-être.
         """
-        try:
-            ready_files = self._scan(folder)
-        except OSError as exc:
-            return _folder_unreadable(folder, exc)
         count = 0
-        for ready in ready_files:
-            if self.cancel_event.is_set():
-                return CycleResult("paused", STOP_MESSAGE)
-            if self.config.paused:
-                return CycleResult("paused")
-            try:
-                file_hash = self.journal.file_hash(ready.path, ready.size, ready.mtime)
-            except OSError as exc:
-                log.warning("Lecture impossible de %s : %s", ready.path, exc)
+        folders: list[str] = []
+        for folder, _ in _by_folder(pending):
+            ready_files = self._ready_files(Path(folder))
+            if ready_files is None:
                 continue
-            entry = self.journal.get(file_hash)
-            if entry is not None and (entry.status in FINAL_STATUSES or entry.step is not Step.NONE):
-                continue
-            self.journal.ensure(file_hash, ready.path.name, ready.size)
-            self.journal.update(file_hash, status=Status.IGNORE, last_error="")
-            count += 1
-        log.info("Dossier %s pris en compte : %d fichier(s) déjà présent(s) ignoré(s)", folder, count)
-        return CycleResult("baseline", msg("cycle_existing_files_ignored", n=count), count, watch_folder)
+            ignored = 0
+            for ready in ready_files:
+                if self.cancel_event.is_set():
+                    return CycleResult("paused", STOP_MESSAGE)
+                if self.config.paused:
+                    return CycleResult("paused")
+                try:
+                    file_hash = self.journal.file_hash(ready.path, ready.size, ready.mtime)
+                except OSError as exc:
+                    log.warning("Lecture impossible de %s : %s", ready.path, exc)
+                    continue
+                entry = self.journal.get(file_hash)
+                if entry is not None and (entry.status in FINAL_STATUSES or entry.step is not Step.NONE):
+                    continue
+                self.journal.ensure(file_hash, ready.path.name, ready.size, folder=folder)
+                self.journal.update(file_hash, status=Status.IGNORE, last_error="")
+                ignored += 1
+            log.info("Dossier %s pris en compte : %d fichier(s) déjà présent(s) ignoré(s)", folder, ignored)
+            count += ignored
+            folders.append(folder)
+        if not folders:
+            return None
+        return CycleResult("baseline", msg("cycle_existing_files_ignored", n=count), count, folders=tuple(folders))
 
-    def _run(self, config: Config, folder: Path, client: AushaClient) -> CycleResult:
-        try:
-            ready_files = self._scan(folder)
-        except OSError as exc:
-            return _folder_unreadable(folder, exc)
+    def _run(self, config: Config, shows: list[ShowFolder], client: AushaClient) -> CycleResult:
+        """Lit chaque dossier distinct une fois ; un dossier introuvable est signalé sans arrêter les autres."""
         catalog: dict[int, set[int]] | None = None  # chargé au premier fichier qui a du travail
         seen: set[str] = set()
         hashed_names: set[str] = set()
-        for ready in ready_files:
-            if self.cancel_event.is_set():
-                return CycleResult("paused", STOP_MESSAGE)
-            if self.config.paused:
-                return CycleResult("paused")
+        present: set[str] = set()
+        missing: list[tuple[str, str]] = []
+        for folder, group in _by_folder(shows):
+            ready_files = self._ready_files(Path(folder))
+            if ready_files is None:
+                missing += [(folder, show.show_name) for show in group]
+                continue
+            for ready in ready_files:
+                if self.cancel_event.is_set():
+                    return CycleResult("paused", STOP_MESSAGE)
+                if self.config.paused:
+                    return CycleResult("paused")
+                try:
+                    file_hash = self.journal.file_hash(ready.path, ready.size, ready.mtime)
+                except OSError as exc:
+                    log.warning("Lecture impossible de %s : %s", ready.path, exc)
+                    continue
+                seen.add(file_hash)
+                hashed_names.add(ready.path.name)
+                entry = self.journal.get(file_hash)
+                if entry is not None and entry.status in FINAL_STATUSES:
+                    continue
+                if catalog is None:
+                    catalog = self._load_catalog(client, shows)
+                try:
+                    self._process(config, client, catalog, ready, file_hash, folder, group)
+                except (AuthError, Cancelled):
+                    raise
+                except Exception as exc:
+                    log.exception("Erreur inattendue sur %s", ready.path.name)
+                    self._record_failure(file_hash, episode_title(ready.path), msg("err_unexpected", detail=exc))
             try:
-                file_hash = self.journal.file_hash(ready.path, ready.size, ready.mtime)
+                present |= {path.name for path in Path(folder).iterdir()}
             except OSError as exc:
-                log.warning("Lecture impossible de %s : %s", ready.path, exc)
-                continue
-            seen.add(file_hash)
-            hashed_names.add(ready.path.name)
-            entry = self.journal.get(file_hash)
-            if entry is not None and entry.status in FINAL_STATUSES:
-                continue
-            if catalog is None:
-                catalog = self._load_catalog(client, config.rules)
-            try:
-                self._process(config, client, catalog, ready, file_hash)
-            except (AuthError, Cancelled):
-                raise
-            except Exception as exc:
-                log.exception("Erreur inattendue sur %s", ready.path.name)
-                self._record_failure(file_hash, episode_title(ready.path), msg("err_unexpected", detail=exc))
-        try:
-            present = {path.name for path in folder.iterdir()}
-        except OSError as exc:
-            return _folder_unreadable(folder, exc)
+                log.warning("Dossier illisible %s : %s", folder, exc)
+                missing += [(folder, show.show_name) for show in group]
+        if missing:
+            # Pas d'oubli tant qu'un dossier manque : ses fichiers ignorés seraient publiés à son retour.
+            folder, show = missing[0]
+            message = msg("cycle_folder_missing_show", folder=folder, show=show)
+            return CycleResult("attention", message, missing=tuple(missing))
         # Un fichier réexporté sous le même nom (nouveau hash) libère l'entrée de l'ancienne version.
         self.journal.forget_unresolved(seen, present - hashed_names)
         attention = self.journal.needing_attention()
@@ -192,25 +214,46 @@ class SyncEngine:
             return CycleResult("attention", msg("cycle_files_need_attention", n=len(attention)))
         return CycleResult("ok")
 
-    def _load_catalog(self, client: AushaClient, rules: list[Rule]) -> dict[int, set[int]]:
-        """Émissions accessibles utilisées par les règles → ids de leurs playlists.
+    def _ready_files(self, folder: Path) -> list[ReadyFile] | None:
+        """Fichiers prêts du dossier, ou None s'il est introuvable ou illisible."""
+        if not folder.is_dir():
+            log.warning("Dossier introuvable : %s", folder)
+            return None
+        try:
+            return self._scan(folder)
+        except OSError as exc:
+            log.warning("Dossier illisible %s : %s", folder, exc)
+            return None
 
-        Une émission dont Ausha refuse les playlists est laissée de côté : ses règles
+    def _load_catalog(self, client: AushaClient, shows: list[ShowFolder]) -> dict[int, set[int]]:
+        """Émissions configurées et accessibles → ids de leurs playlists.
+
+        Une émission dont Ausha refuse les playlists est laissée de côté : ses mots-clés
         deviennent « à corriger » sans bloquer les autres émissions.
         """
         available = {show.id for show in client.list_shows()}
         catalog: dict[int, set[int]] = {}
-        for show_id in {rule.show_id for rule in rules} & available:
+        for show_id in {show.show_id for show in shows} & available:
             try:
                 catalog[show_id] = {p.id for p in client.list_playlists(show_id)}
             except RejectedError as exc:
                 log.warning("Playlists de l'émission %s refusées par Ausha : %s", show_id, render(str(exc), lang="fr"))
         return catalog
 
-    def _process(self, config: Config, client: AushaClient, catalog: dict[int, set[int]], ready: ReadyFile, file_hash: str) -> None:
-        entry = self.journal.ensure(file_hash, ready.path.name, ready.size)
+    def _process(
+        self,
+        config: Config,
+        client: AushaClient,
+        catalog: dict[int, set[int]],
+        ready: ReadyFile,
+        file_hash: str,
+        folder: str,
+        shows: list[ShowFolder],
+    ) -> None:
+        """Traite un fichier du dossier folder : seules les émissions de ce dossier (shows) peuvent le prendre."""
+        entry = self.journal.ensure(file_hash, ready.path.name, ready.size, folder=folder)
         title = episode_title(ready.path)
-        rule = find_rule(ready.path.name, config.rules)
+        rule = find_match(ready.path.name, shows)
         if rule is None:
             self._flag(entry, Status.SANS_REGLE, msg("err_no_rule"), "no_rule", title)
             return
@@ -370,6 +413,14 @@ def _title_key(text: str) -> str:
     return " ".join(unicodedata.normalize("NFC", html.unescape(text)).split()).casefold()
 
 
-def _folder_unreadable(folder: Path, exc: OSError) -> CycleResult:
-    log.warning("Dossier illisible %s : %s", folder, exc)
-    return CycleResult("folder_missing", msg("cycle_folder_missing", folder=folder))
+def _by_folder(shows: list[ShowFolder]) -> list[tuple[str, list[ShowFolder]]]:
+    """Émissions regroupées par dossier (same_folder), dans l'ordre de première apparition ;
+    chaque groupe garde le chemin écrit pour sa première émission et l'ordre des émissions."""
+    groups: list[tuple[str, list[ShowFolder]]] = []
+    for show in shows:
+        group = next((members for folder, members in groups if same_folder(folder, show.folder)), None)
+        if group is None:
+            groups.append((show.folder, [show]))
+        else:
+            group.append(show)
+    return groups
