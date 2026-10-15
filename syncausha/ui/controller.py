@@ -137,7 +137,9 @@ class AppController(QObject):
         self.busy = True
         self._pending_dry_run = []
         self._no_rule_titles = []
-        self._set_state("syncing", "")
+        # En pause, le cycle ne fait que l'état des lieux d'un nouveau dossier : l'état affiché reste « en pause ».
+        if not self.config.paused:
+            self._set_state("syncing", "")
         self._start_cycle.emit()
         self._restart_timer()
 
@@ -154,9 +156,14 @@ class AppController(QObject):
         self.retry(file_hash)
 
     def _on_timer(self) -> None:
-        # Un passage du minuteur pendant un cycle, en pause ou avec un jeton refusé est ignoré.
-        if not (self.auth_blocked or self.busy or self.config.paused):
+        # Un passage du minuteur pendant un cycle ou avec un jeton refusé est ignoré ; en pause aussi, sauf pour
+        # l'état des lieux d'un dossier pas encore fait (introuvable jusque-là, par exemple).
+        if not (self.auth_blocked or self.busy) and (not self.config.paused or self._baseline_pending()):
             self.sync_now()
+
+    def _baseline_pending(self) -> bool:
+        """Une émission surveillée attend l'état des lieux de son dossier."""
+        return any(show.needs_baseline() for show in watched_shows(self.config))
 
     def _restart_timer(self) -> None:
         self._timer.start(self.config.interval_minutes * 60_000)
@@ -303,6 +310,10 @@ class AppController(QObject):
             self._set_state(*(("syncing", "") if self.busy else self._idle_state()))
         self.config_changed.emit()
         self.activity_changed.emit()
+        if config.paused and self._baseline_pending():
+            # En pause, l'état des lieux d'un dossier tout juste choisi est fait tout de suite (sans appel à Ausha) :
+            # sinon les fichiers déposés pendant la pause seraient ignorés à la reprise.
+            self.sync_now()
         return True
 
     def update_token(self, token: str) -> None:

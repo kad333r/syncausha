@@ -990,3 +990,27 @@ def test_file_not_ready_keeps_its_ignored_entry_when_another_folder_has_a_file_o
     assert engine.run_cycle().state == "ok"
     assert env.client.calls == []
     assert sorted(e.folder for e in env.journal.ignored()) == sorted([str(env.folder), str(other)])
+
+
+def test_baseline_is_taken_while_paused_without_calling_ausha(env, tmp_path):
+    # Sinon les fichiers déposés pendant la pause dans le dossier d'une nouvelle émission seraient ignorés à la reprise.
+    env.config.paused = True
+    env.config.shows[0].baseline_folder = ""
+    add_file(env, "MARS ATTACK 12.mp3", b"12")
+    factory_calls = []
+    engine = SyncEngine(env.config, env.journal, lambda cfg, cancel: factory_calls.append(cfg) or env.client,
+                        scan=lambda path: scan_ready_files(path, min_age_seconds=0))
+    result = engine.run_cycle()
+    assert (result.state, result.count, result.folders) == ("baseline", 1, (str(env.folder),))
+    assert [e.filename for e in env.journal.ignored()] == ["MARS ATTACK 12.mp3"]
+    env.config.shows[0].baseline_folder = env.config.shows[0].folder  # le contrôleur enregistre l'état des lieux
+    add_file(env, "MARS ATTACK 13.mp3", b"13")  # déposé pendant la pause
+    assert engine.run_cycle().state == "paused"
+    env.config.shows[0].folder = str(tmp_path / "absent")  # état des lieux impossible : la pause reste
+    assert engine.run_cycle().state == "paused"
+    assert factory_calls == []
+    env.config.shows[0].folder = env.config.shows[0].baseline_folder
+    env.config.paused = False
+    assert engine.run_cycle().state == "ok"
+    assert creates(env) == ["MARS ATTACK 13"]
+    assert [e.filename for e in env.journal.ignored()] == ["MARS ATTACK 12.mp3"]

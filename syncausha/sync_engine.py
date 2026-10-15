@@ -93,16 +93,18 @@ class SyncEngine:
 
     def run_cycle(self) -> CycleResult:
         config = self.config
-        if config.paused:
-            return CycleResult("paused")
         shows = [show for show in config.shows if show.folder]
-        if not shows:
-            return CycleResult("not_configured", msg("cycle_add_show"))
         pending = [show for show in shows if show.needs_baseline()]
         if pending:
+            # Fait même en pause (aucun appel à Ausha) : sinon les fichiers déposés pendant la pause dans le
+            # dossier d'une nouvelle émission seraient ignorés à la reprise.
             baseline = self._take_baselines(pending, shows)
             if baseline is not None:
                 return baseline
+        if config.paused:
+            return CycleResult("paused")
+        if not shows:
+            return CycleResult("not_configured", msg("cycle_add_show"))
         try:
             client = self._client_factory(config, self.cancel_event)
         except AuthError as exc:
@@ -125,7 +127,8 @@ class SyncEngine:
             client.close()
 
     def _take_baselines(self, pending: list[ShowFolder], shows: list[ShowFolder]) -> CycleResult | None:
-        """Dossiers tout juste choisis : leurs fichiers prêts sont ignorés (statut « ignore »), sans appel à Ausha.
+        """Dossiers tout juste choisis : leurs fichiers prêts sont ignorés (statut « ignore »), sans appel à Ausha,
+        même en pause.
 
         folders du résultat : dossiers dont les émissions ont leur état des lieux fait.
         Un dossier partagé par plusieurs émissions n'est lu qu'une fois. Un dossier déjà surveillé et
@@ -150,8 +153,6 @@ class SyncEngine:
             for ready in ready_files:
                 if self.cancel_event.is_set():
                     return CycleResult("paused", STOP_MESSAGE)
-                if self.config.paused:
-                    return CycleResult("paused")
                 try:
                     file_hash = self.journal.file_hash(ready.path, ready.size, ready.mtime)
                 except OSError as exc:

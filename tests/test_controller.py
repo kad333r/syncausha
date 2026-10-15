@@ -1,4 +1,6 @@
+import os
 import threading
+import time
 from dataclasses import replace
 
 import pytest
@@ -177,12 +179,61 @@ def test_baseline_of_a_folder_changed_meanwhile_is_not_kept(controller, messages
 
 
 def test_baseline_while_paused_does_not_run_a_cycle(controller, syncs):
-    set_shows(controller, ShowFolder(1, "Mars Attack", "D:/Podcasts"))
     controller.update_config(replace(controller.config, paused=True))
+    set_shows(controller, ShowFolder(1, "Mars Attack", "D:/Podcasts"))
+    assert syncs == [True]  # état des lieux fait tout de suite, même en pause
     controller._on_cycle_finished(CycleResult("baseline", "", count=0, folders=("D:/Podcasts",)))
     assert controller.config.shows[0].baseline_folder == "D:/Podcasts"
     assert controller.state == "paused"
-    assert syncs == []
+    assert syncs == [True]  # pas de vrai cycle ensuite
+
+
+def test_a_new_folder_is_inventoried_at_once_while_paused(controller, syncs):
+    controller.update_config(replace(controller.config, paused=True))
+    set_shows(controller, ShowFolder(1, "Mars Attack", "D:/Podcasts", "D:/Podcasts"))
+    controller.update_config(replace(controller.config, interval_minutes=30))
+    assert syncs == []  # rien à inventorier : la pause est respectée
+    set_shows(controller, ShowFolder(1, "Mars Attack", "E:/Nouveau", "D:/Podcasts"))
+    assert syncs == [True]
+    controller.update_config(replace(controller.config, paused=False))
+    set_shows(controller, ShowFolder(1, "Mars Attack", "F:/Autre", "D:/Podcasts"))
+    assert syncs == [True]  # hors pause, c'est la page Émissions qui lance le cycle
+
+
+def test_timer_takes_a_pending_baseline_while_paused(controller, syncs):
+    # Dossier introuvable au moment de l'état des lieux, puis branché pendant la pause.
+    controller.update_config(replace(controller.config, paused=True))
+    set_shows(controller, ShowFolder(1, "Mars Attack", "D:/Podcasts"))
+    syncs.clear()
+    controller._on_timer()
+    assert syncs == [True]
+
+
+def age(path):
+    old = time.time() - 3600
+    os.utime(path, (old, old))
+
+
+def test_files_dropped_during_a_pause_in_a_new_show_folder_are_not_ignored(controller, tmp_path, wait_until):
+    folder = tmp_path / "mars"
+    folder.mkdir()
+    (folder / "MARS ATTACK 12.mp3").write_bytes(b"12")
+    age(folder / "MARS ATTACK 12.mp3")
+    factory_calls = []
+    controller.engine._client_factory = lambda config, cancel: factory_calls.append(config)  # None : jamais Ausha
+    states = []
+    controller.state_changed.connect(lambda state, message: states.append(state))
+    controller.set_paused(True)
+    set_shows(controller, ShowFolder(1, "Mars Attack", str(folder), rules=[KeywordRule("MARS ATTACK")]))
+    assert wait_until(lambda: not controller.busy and controller.config.shows[0].baseline_folder == str(folder))
+    assert [e.filename for e in controller.journal.ignored()] == ["MARS ATTACK 12.mp3"]
+    assert controller.state == "paused" and "syncing" not in states
+    (folder / "MARS ATTACK 13.mp3").write_bytes(b"13")  # déposé pendant la pause
+    age(folder / "MARS ATTACK 13.mp3")
+    assert factory_calls == []
+    controller.set_paused(False)
+    assert wait_until(lambda: factory_calls and not controller.busy)
+    assert [e.filename for e in controller.journal.ignored()] == ["MARS ATTACK 12.mp3"]
 
 
 def test_publish_anyway(controller, syncs):
