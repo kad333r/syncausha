@@ -5,7 +5,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from syncausha.i18n import tr
+from syncausha.i18n import render, tr
 from syncausha.ui.activity_page import state_text
 from syncausha.ui.controller import AppController, watched_shows
 from syncausha.ui.icons import state_icon
@@ -57,8 +57,7 @@ class Tray(QSystemTrayIcon):
         """Sous-menu « Ouvrir le dossier » : une entrée par émission avec dossier, grisé s'il n'y en a aucune.
         Refait seulement si les entrées changent (un menu ouvert ne clignote pas à chaque cycle)."""
         entries = [
-            (tr("tray_open_show_folder", show=show.show_name or tr("rules_show_fallback", id=show.show_id),
-                folder=show.folder), show.folder)
+            (tr("tray_open_show_folder", show=render(show.label()), folder=show.folder), show.folder)
             for show in watched_shows(self.controller.config)
         ]
         if entries == self._folder_entries:

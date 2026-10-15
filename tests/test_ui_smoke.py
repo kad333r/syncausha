@@ -139,12 +139,12 @@ def test_activity_header_counts_the_watched_shows(controller, french):
 
 def test_activity_lists_missing_folders_with_a_button_to_edit_the_show(controller, french):
     set_shows(controller, ShowFolder(1, "Mars Attack", r"D:\Mars", r"D:\Mars"), ShowFolder(2, "", r"E:\Silicon"))
-    controller.missing_folders = ((r"E:\Silicon", "2"),)  # émission sans nom : son id (comme le moteur)
+    controller.missing_folders = ((r"E:\Silicon", ShowFolder(2).label()),)  # émission sans nom, comme le moteur
     page = ActivityPage(controller)
     requested = []
     page.edit_show_requested.connect(requested.append)
     assert "À traiter" in texts(page, QLabel)
-    assert r"Dossier introuvable : E:\Silicon (2)" in texts(page, QLabel)
+    assert r"Dossier introuvable : E:\Silicon (Émission 2)" in texts(page, QLabel)
     button(page, "Modifier l'émission").click()
     assert requested == [1]
 

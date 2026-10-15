@@ -384,6 +384,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Choisissez une émission",
         "ar": "اختر برنامجًا",
     },
+    "shows_fallback_name": {
+        "en": "Show {id}",
+        "fr": "Émission {id}",
+        "ar": "البرنامج {id}",
+    },
     "shows_field_folder": {
         "en": "Folder",
         "fr": "Dossier",
@@ -413,6 +418,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Show not saved.",
         "fr": "Émission non enregistrée.",
         "ar": "لم يُحفظ البرنامج.",
+    },
+    "shows_keyword_not_saved": {
+        "en": "Keyword not saved.",
+        "fr": "Mot-clé non enregistré.",
+        "ar": "لم تُحفظ الكلمة المفتاحية.",
     },
     "shows_keywords": {
         "en": "Keywords",
@@ -485,11 +495,6 @@ CATALOG: dict[str, dict[str, str]] = {
         "fr": "Impossible de charger les émissions Ausha : {detail}",
         "ar": "تعذّر تحميل برامج Ausha: {detail}",
     },
-    "rules_show_fallback": {
-        "en": "Show {id}",
-        "fr": "Émission {id}",
-        "ar": "البرنامج {id}",
-    },
     "rules_playlist_fallback": {
         "en": "Playlist {id}",
         "fr": "Playlist {id}",
@@ -514,11 +519,6 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Fix the cover image before saving.",
         "fr": "Corrigez l'image avant d'enregistrer.",
         "ar": "صحّح صورة الغلاف قبل الحفظ.",
-    },
-    "rules_not_saved": {
-        "en": "Rule not saved.",
-        "fr": "Règle non enregistrée.",
-        "ar": "لم تُحفظ القاعدة.",
     },
     # --- Page Réglages -----------------------------------------------------------
     "settings_title": {
@@ -631,6 +631,19 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Show folder",
         "fr": "Dossier de l'émission",
         "ar": "مجلد البرنامج",
+    },
+    "dialog_change_show": {
+        "en": "Change show",
+        "fr": "Changer d'émission",
+        "ar": "تغيير البرنامج",
+    },
+    "dialog_change_show_question": {
+        "en": "Playlists belong to a show: changing the show removes the playlist from its keywords "
+        "(keywords with a playlist: {n}). Continue?",
+        "fr": "Les playlists appartiennent à une émission : changer d'émission retire la playlist de ses mots-clés "
+        "(mots-clés avec une playlist : {n}). Continuer ?",
+        "ar": "قوائم التشغيل تابعة للبرنامج: تغيير البرنامج يزيل قائمة التشغيل من كلماته المفتاحية "
+        "(الكلمات المفتاحية التي لها قائمة تشغيل: {n}). هل تريد المتابعة؟",
     },
     "dialog_delete_show": {
         "en": "Delete show",

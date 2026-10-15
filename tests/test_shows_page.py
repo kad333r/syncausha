@@ -186,13 +186,50 @@ def test_same_folder_written_differently_keeps_the_baseline(controller, syncs):
     assert controller.config.shows == [mars()]
 
 
-def test_changing_the_show_keeps_the_keywords_but_not_the_playlists_of_the_old_show(controller, syncs):
-    page = make_page(controller, mars(rules=[KeywordRule("MARS ATTACK", 7, "Saison 3", "cover.png", "Texte")]))
+def test_changing_the_show_keeps_the_keywords_but_not_the_playlists_of_the_old_show(controller, syncs, answers, french):
+    rules = [KeywordRule("MARS ATTACK", 7, "Saison 3", "cover.png", "Texte"), KeywordRule("BONUS", 8, "Bonus"),
+             KeywordRule("INTERVIEW")]
+    page = make_page(controller, mars(rules=rules))
     choose(page.show_combo, 2)
+    answers["answer"] = QMessageBox.StandardButton.No
+    page._save_show()
+    assert answers["asked"] == [(
+        "Changer d'émission",
+        "Les playlists appartiennent à une émission : changer d'émission retire la playlist de ses mots-clés "
+        "(mots-clés avec une playlist : 2). Continuer ?",
+    )]
+    assert controller.config.shows == [mars(rules=rules)] and syncs == []  # refusé : rien d'enregistré
+    answers["answer"] = QMessageBox.StandardButton.Yes
     page._save_show()
     show = controller.config.shows[0]
     assert (show.show_id, show.show_name, show.folder, show.baseline_folder) == (2, "Silicon Talk", r"D:\Mars", r"D:\Mars")
-    assert show.rules == [KeywordRule("MARS ATTACK", None, "", "cover.png", "Texte")]
+    assert show.rules == [KeywordRule("MARS ATTACK", None, "", "cover.png", "Texte"), KeywordRule("BONUS"),
+                          KeywordRule("INTERVIEW")]
+    assert syncs == [True]
+
+
+def test_changing_the_show_of_keywords_without_playlist_asks_nothing(controller, syncs, answers):
+    page = make_page(controller, mars(rules=[KeywordRule("MARS ATTACK")]))
+    choose(page.show_combo, 2)
+    page._save_show()
+    assert answers["asked"] == []
+    assert controller.config.shows[0].show_id == 2 and controller.config.shows[0].rules == [KeywordRule("MARS ATTACK")]
+
+
+def test_keyword_not_saved_is_reported(controller, syncs, answers, monkeypatch, french):
+    page = make_page(controller, mars(rules=[KeywordRule("MARS ATTACK")]))
+
+    def full_disk(config, path):
+        raise OSError(28, "Espace disque insuffisant")
+
+    monkeypatch.setattr(controller_module, "save_config", full_disk)
+    page.keyword.setText("BONUS")
+    page._save_rule()
+    assert page.form_error.text() == "Mot-clé non enregistré."
+    page.rule_list.setCurrentRow(0)
+    page._delete_rule()
+    assert page.form_error.text() == "Mot-clé non enregistré."
+    assert controller.config.shows[0].rules == [KeywordRule("MARS ATTACK")] and syncs == []
 
 
 def test_show_not_saved_is_reported(controller, syncs, monkeypatch, french):

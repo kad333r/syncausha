@@ -13,7 +13,7 @@ from pathlib import Path
 import keyring
 from keyring.errors import PasswordDeleteError
 
-from syncausha.i18n import LANGUAGES
+from syncausha.i18n import LANGUAGES, msg
 
 log = logging.getLogger(__name__)
 
@@ -84,11 +84,16 @@ class Rule:
         return cls(**kwargs)
 
 
+def folder_key(path: str) -> str:
+    """Forme comparable d'un dossier Windows : casse, séparateurs et barre finale ignorés."""
+    return ntpath.normcase(ntpath.normpath(path))
+
+
 def same_folder(a: str, b: str) -> bool:
-    """Même dossier Windows (casse, séparateurs et barre finale ignorés) ; un chemin vide n'égale rien."""
+    """Même dossier Windows (voir folder_key) ; un chemin vide n'égale rien."""
     if not a or not b:
         return False
-    return ntpath.normcase(ntpath.normpath(a)) == ntpath.normcase(ntpath.normpath(b))
+    return folder_key(a) == folder_key(b)
 
 
 _KEYWORD_STR_FIELDS = ("playlist_name", "image_path", "description_template")
@@ -131,6 +136,10 @@ class ShowFolder:
 
     def needs_baseline(self) -> bool:
         return bool(self.folder) and not same_folder(self.folder, self.baseline_folder)
+
+    def label(self) -> str:
+        """Nom affiché : celui de l'émission, sinon « Émission {id} » (message à traduire par i18n.render)."""
+        return self.show_name or msg("shows_fallback_name", id=self.show_id)
 
     @classmethod
     def from_dict(cls, data: object) -> ShowFolder | None:

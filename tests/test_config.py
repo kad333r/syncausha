@@ -2,7 +2,8 @@ import json
 import logging
 
 from syncausha import config as cfg
-from syncausha.config import Config, KeywordRule, ShowFolder, load_config, same_folder, save_config
+from syncausha.config import Config, KeywordRule, ShowFolder, folder_key, load_config, same_folder, save_config
+from syncausha.i18n import msg, render
 
 
 def test_missing_file_gives_defaults(tmp_path):
@@ -141,6 +142,19 @@ def test_needs_baseline_and_same_folder():
     assert ShowFolder(show_id=1, folder="D:/A").needs_baseline()
     assert not ShowFolder(show_id=1, folder="D:/A", baseline_folder="d:\\a").needs_baseline()
     assert not ShowFolder(show_id=1, folder="").needs_baseline()
+
+
+def test_folder_key_ignores_case_separators_and_trailing_slash():
+    assert folder_key(r"D:\Podcasts\Mars") ==folder_key("d:/podcasts/mars/") == folder_key("D:/Podcasts/./Mars")
+    assert folder_key("D:/Podcasts/Mars") != folder_key("D:/Podcasts/Mars 2")
+
+
+def test_show_label_is_its_name_or_a_translatable_fallback():
+    assert ShowFolder(show_id=1, show_name="Mars Attack").label() == "Mars Attack"
+    unnamed = ShowFolder(show_id=12).label()
+    assert unnamed == msg("shows_fallback_name", id=12)
+    assert render(unnamed, lang="en") == "Show 12"
+    assert render(unnamed, lang="fr") == "Émission 12"
 
 
 def test_interval_is_clamped():

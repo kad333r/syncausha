@@ -55,7 +55,8 @@ class CycleResult:
     ou baseline (count fichiers déjà présents dans les dossiers folders ont été ignorés, rien n'a été publié ;
     chaque dossier est écrit comme dans les réglages).
     message : message traduisible (i18n.msg).
-    missing : (dossier, émission) introuvables ou illisibles pendant ce cycle (état attention)."""
+    missing : (dossier, émission) introuvables ou illisibles pendant ce cycle (état attention) ; émission :
+    ShowFolder.label(), son nom ou un message à traduire."""
 
     state: str
     message: str = ""
@@ -440,5 +441,5 @@ def _by_folder(shows: list[ShowFolder]) -> list[tuple[str, list[ShowFolder]]]:
 
 
 def _missing(folder: str, shows: list[ShowFolder]) -> list[tuple[str, str]]:
-    """(dossier, émission) pour chaque émission d'un dossier introuvable ; son id si elle n'a pas de nom."""
-    return [(folder, show.show_name or str(show.show_id)) for show in shows]
+    """(dossier, émission) pour chaque émission d'un dossier introuvable (ShowFolder.label)."""
+    return [(folder, show.label()) for show in shows]

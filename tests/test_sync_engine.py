@@ -7,7 +7,7 @@ from PIL import Image
 import syncausha.sync_engine as sync_engine
 from syncausha.ausha_client import AuthError, Cancelled, Episode, Playlist, RejectedError, Show, TransientError
 from syncausha.config import Config, KeywordRule, ShowFolder, same_folder
-from syncausha.i18n import render
+from syncausha.i18n import msg, render
 from syncausha.journal import Journal, Status, Step
 from syncausha.scanner import scan_ready_files
 from syncausha.sync_engine import RECREATE_AFTER_SECONDS, SyncEngine, _same_title
@@ -956,9 +956,10 @@ def test_folder_left_by_its_show_is_inventoried_again(env, tmp_path):
     assert [e.filename for e in env.journal.ignored()] == ["LE DEBRIEF 43.mp3"]
 
 
-def test_missing_folder_of_an_unnamed_show_shows_its_id(env, tmp_path):
+def test_missing_folder_of_an_unnamed_show_gets_its_fallback_name(env, tmp_path):
     absent = str(tmp_path / "absent")
     env.config.shows.append(ShowFolder(show_id=2, folder=absent, baseline_folder=absent))
     result = env.engine.run_cycle()
-    assert result.missing == ((absent, "2"),)
-    assert render(result.message, lang="en") == f"Folder not found: {absent} (2)"
+    assert result.missing == ((absent, msg("shows_fallback_name", id=2)),)
+    assert render(result.message, lang="en") == f"Folder not found: {absent} (Show 2)"
+    assert render(result.message, lang="fr") == f"Dossier introuvable : {absent} (Émission 2)"

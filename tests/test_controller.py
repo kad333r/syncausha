@@ -6,7 +6,7 @@ import pytest
 import syncausha.ui.controller as controller_module
 from syncausha.ausha_client import Playlist, RejectedError, Show
 from syncausha.config import Config, KeywordRule, ShowFolder, load_config, save_config
-from syncausha.i18n import msg
+from syncausha.i18n import msg, tr
 from syncausha.journal import Journal, Status
 from syncausha.sync_engine import CycleResult, Event
 from syncausha.ui.controller import AppController
@@ -324,15 +324,22 @@ def test_only_newly_missing_folders_are_notified(controller, messages, french):
     ]
 
 
-def test_new_folders_notify_again_if_still_missing(controller, notes, french):
+def test_changing_the_folders_does_not_notify_a_missing_folder_again(controller, notes, french):
     set_shows(controller, ShowFolder(1, "Mars Attack", MARS[0], MARS[0]))
     controller._on_cycle_finished(missing_result(MARS))
     controller.update_config(replace(controller.config, interval_minutes=20))
     controller._on_cycle_finished(missing_result(MARS))
-    assert notes == ["Dossier introuvable"]
     set_shows(controller, *controller.config.shows, ShowFolder(2, "Silicon Talk", r"F:\Autre", r"F:\Autre"))
     controller._on_cycle_finished(missing_result(MARS))
-    assert notes == ["Dossier introuvable"] * 2
+    assert notes == ["Dossier introuvable"]  # toujours le même dossier manquant
+    set_shows(controller, *controller.config.shows, ShowFolder(3, "Silicon Talk", SILICON[0], SILICON[0]))
+    controller._on_cycle_finished(missing_result(MARS, SILICON))
+    assert notes == ["Dossier introuvable"] * 2  # un nouveau dossier manquant, lui, est signalé
+
+
+def test_missing_folder_of_an_unnamed_show_is_notified_with_its_fallback_name(controller, messages, french):
+    controller._on_cycle_finished(missing_result((r"D:\Mars", ShowFolder(7).label())))
+    assert messages == [("Dossier introuvable", r"Dossier introuvable : D:\Mars (Émission 7)")]
 
 
 def test_missing_folder_of_a_removed_or_moved_show_is_forgotten_at_once(controller):
@@ -345,6 +352,11 @@ def test_missing_folder_of_a_removed_or_moved_show_is_forgotten_at_once(controll
     assert controller.missing_folders == (MARS,)
     set_shows(controller)
     assert controller.missing_folders == ()
+    set_shows(controller, mars)  # émission recréée, dossier toujours absent : de nouveau signalé
+    notes = []
+    controller.notification.connect(lambda title, body: notes.append(title))
+    controller._on_cycle_finished(missing_result(MARS))
+    assert notes == [tr("notif_folder_missing")]
 
 
 def test_saving_new_settings_is_announced(controller):

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import ntpath
 import threading
 from collections.abc import Callable
 from dataclasses import replace
@@ -11,7 +10,16 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
 from syncausha.ausha_client import AushaClient, AuthError, Playlist, RejectedError, Show
-from syncausha.config import Config, ShowFolder, get_token, load_config, same_folder, save_config, set_token
+from syncausha.config import (
+    Config,
+    ShowFolder,
+    folder_key,
+    get_token,
+    load_config,
+    same_folder,
+    save_config,
+    set_token,
+)
 from syncausha.i18n import msg, render, tr
 from syncausha.journal import Journal
 from syncausha.sync_engine import CycleResult, Event, SyncEngine
@@ -39,12 +47,7 @@ STATE_NOTIFICATIONS = {
 COMPLETED_STATES = ("ok", "attention")
 
 Catalog = dict[Show, list[Playlist]]
-MissingFolder = tuple[str, str]  # (dossier, émission), comme CycleResult.missing
-
-
-def show_label(show: ShowFolder) -> str:
-    """Nom d'une émission dans CycleResult.missing (sync_engine._missing) : son id si elle n'a pas de nom."""
-    return show.show_name or str(show.show_id)
+MissingFolder = tuple[str, str]  # (dossier, ShowFolder.label()), comme CycleResult.missing
 
 
 def watched_shows(config: Config) -> list[ShowFolder]:
@@ -54,7 +57,7 @@ def watched_shows(config: Config) -> list[ShowFolder]:
 
 def _folder_keys(config: Config) -> set[str]:
     """Dossiers surveillés, à la casse et à l'écriture près (comme same_folder)."""
-    return {ntpath.normcase(ntpath.normpath(show.folder)) for show in watched_shows(config)}
+    return {folder_key(show.folder) for show in watched_shows(config)}
 
 
 class CycleWorker(QObject):
@@ -98,9 +101,8 @@ class AppController(QObject):
         self._pending_dry_run: list[str] = []
         self._no_rule_titles: list[str] = []
         self._last_result_state = ""
-        # Dossiers introuvables au dernier cycle allé jusqu'au bout, et ceux déjà signalés par une notification.
+        # Dossiers introuvables au dernier cycle allé jusqu'au bout (déjà signalés par une notification).
         self.missing_folders: tuple[MissingFolder, ...] = ()
-        self._notified_missing: frozenset[MissingFolder] = frozenset()
         self.state, self.message = self._idle_state()
 
         self.engine = SyncEngine(self.config, journal, self._make_client, on_event=self._engine_event.emit)
@@ -217,12 +219,11 @@ class AppController(QObject):
 
     def _follow_missing_folders(self, missing: tuple[MissingFolder, ...]) -> None:
         """Notifie les dossiers qui viennent de devenir introuvables, pas ceux déjà signalés."""
-        new = [item for item in missing if item not in self._notified_missing]
+        new = [item for item in missing if item not in self.missing_folders]
         self.missing_folders = tuple(missing)
-        self._notified_missing = frozenset(missing)
         if new:
-            body = "\n".join(tr("cycle_folder_missing_show", folder=folder, show=show) for folder, show in new)
-            self.notification.emit(tr("notif_folder_missing"), body)
+            lines = [render(msg("cycle_folder_missing_show", folder=folder, show=show)) for folder, show in new]
+            self.notification.emit(tr("notif_folder_missing"), "\n".join(lines))
 
     def _on_baseline(self, result: CycleResult) -> None:
         """Fichiers déjà présents ignorés : les émissions de ces dossiers sont notées comme prises en compte,
@@ -289,13 +290,12 @@ class AppController(QObject):
         if config.interval_minutes != previous.interval_minutes:
             self._restart_timer()
         if _folder_keys(config) != _folder_keys(previous):
-            # Un dossier toujours introuvable, un jeton toujours refusé seront de nouveau signalés.
-            self._last_result_state = ""
-            self._notified_missing = frozenset()
-        # Dossier introuvable d'une émission retirée ou déplacée : oublié sans attendre le prochain cycle.
+            self._last_result_state = ""  # un jeton toujours refusé sera de nouveau signalé
+        # Dossier introuvable d'une émission retirée ou déplacée : oublié sans attendre le prochain cycle (et
+        # de nouveau signalé s'il manque encore à une émission recréée). Ceux qui restent ne sont pas resignalés.
         self.missing_folders = tuple(
             (folder, label) for folder, label in self.missing_folders
-            if any(same_folder(show.folder, folder) and show_label(show) == label for show in config.shows)
+            if any(same_folder(show.folder, folder) and show.label() == label for show in config.shows)
         )
         if config.paused:
             self._set_state("paused", "")

@@ -7,10 +7,10 @@ from PySide6.QtCore import QDateTime, QLocale, Qt, QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from syncausha.config import ShowFolder, same_folder
-from syncausha.i18n import render, tr
+from syncausha.i18n import msg, render, tr
 from syncausha.journal import Entry, Status
 from syncausha.rules import episode_title, find_match
-from syncausha.ui.controller import AppController, MissingFolder, show_label, watched_shows
+from syncausha.ui.controller import AppController, MissingFolder, watched_shows
 from syncausha.ui.style import palette
 from syncausha.ui.widgets import Row, bidi_text, clear_layout, isolate, joined, make_label, pill, section_label
 
@@ -141,11 +141,11 @@ class ActivityPage(QWidget):
         """Dossier introuvable : « Modifier l'émission » ouvre celle qui le surveille (même dossier, même nom)."""
         folder, label = item
         in_folder = self._shows_in(folder)
-        named = [i for i, show in in_folder if show_label(show) == label]
+        named = [i for i, show in in_folder if show.label() == label]
         index = (named or [i for i, _ in in_folder] or [-1])[0]
         button = QPushButton(tr("activity_edit_show"))
         button.clicked.connect(lambda _=False, i=index: self.edit_show_requested.emit(i))
-        return Row(tr("cycle_folder_missing_show", folder=folder, show=label), "", button)
+        return Row(render(msg("cycle_folder_missing_show", folder=folder, show=label)), "", button)
 
     def _matching_show(self, entry: Entry) -> int:
         """Émission du dossier du fichier dont un mot-clé correspond (celle qui l'a pris), sinon la première de

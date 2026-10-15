@@ -375,6 +375,8 @@ class ShowsPage(QWidget):
         config = self.controller.config
         shows = list(config.shows)
         old = None if self._show_index is None else shows[self._show_index]
+        if old is not None and show_id != old.show_id and not self._confirm_show_change(old):
+            return
         name = self._catalog_name(show_id)
         if old is None:
             show = ShowFolder(show_id=show_id, show_name=name or "", folder=self._folder)
@@ -414,6 +416,15 @@ class ShowsPage(QWidget):
             self._set_folder(show.folder)
             self.show_error.clear()
         self._sync_now()
+
+    def _confirm_show_change(self, old: ShowFolder) -> bool:
+        """Les playlists appartiennent à une émission : en changer retire celles des mots-clés (demandé d'abord)."""
+        with_playlist = sum(1 for rule in old.rules if rule.playlist_id is not None)
+        if not with_playlist:
+            return True
+        answer = QMessageBox.question(
+            self, tr("dialog_change_show"), tr("dialog_change_show_question", n=with_playlist))
+        return answer == QMessageBox.StandardButton.Yes
 
     def _delete_show(self) -> None:
         if self._show_index is None:
@@ -544,7 +555,7 @@ class ShowsPage(QWidget):
             rules[self._rule_index] = rule
             index = self._rule_index
         if not self._replace_show(replace(show, rules=rules)):
-            self.form_error.setText(tr("rules_not_saved"))
+            self.form_error.setText(tr("shows_keyword_not_saved"))
             return
         self._render_rules_and_select(index)
         self._sync_now()
@@ -565,7 +576,7 @@ class ShowsPage(QWidget):
         rules = list(show.rules)
         del rules[self._rule_index]
         if not self._replace_show(replace(show, rules=rules)):
-            self.form_error.setText(tr("rules_not_saved"))
+            self.form_error.setText(tr("shows_keyword_not_saved"))
             return
         self._rule_index = None
         self._render_rules()
@@ -590,7 +601,7 @@ class ShowsPage(QWidget):
 
 
 def _show_name(show: ShowFolder) -> str:
-    return show.show_name or tr("rules_show_fallback", id=show.show_id)
+    return render(show.label())
 
 
 def _playlist_label(rule: KeywordRule) -> str:
