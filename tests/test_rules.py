@@ -3,18 +3,65 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from syncausha.config import Rule
+from syncausha.config import KeywordRule, Rule, ShowFolder
 from syncausha.i18n import render
 from syncausha.rules import (
     episode_description,
     episode_title,
-    find_rule,
+    find_match,
     validate_image,
     validate_rule,
 )
 
-MARS = Rule(keyword="MARS ATTACK", show_id=1, show_name="Mars Attack")
-DEBRIEF = Rule(keyword="Le Débrief", show_id=2)
+MARS = ShowFolder(
+    show_id=1,
+    show_name="Mars Attack",
+    folder="D:/P",
+    rules=[
+        KeywordRule("BONUS", playlist_id=9, playlist_name="Bonus"),
+        KeywordRule(
+            "MARS ATTACK",
+            playlist_id=7,
+            playlist_name="Saison 3",
+            image_path="C:/m.png",
+            description_template="Nouvel épisode",
+        ),
+    ],
+)
+SILICON = ShowFolder(show_id=2, show_name="Silicon Talk", folder="D:/P", rules=[KeywordRule("LE DEBRIEF")])
+
+
+def show_with(keyword: str, show_id: int = 1) -> ShowFolder:
+    return ShowFolder(show_id=show_id, folder="D:/P", rules=[KeywordRule(keyword)])
+
+
+def test_match_builds_effective_rule():
+    rule = find_match("MARS ATTACK - Épisode 12.mp3", [MARS, SILICON])
+    assert rule == Rule(
+        keyword="MARS ATTACK",
+        show_id=1,
+        show_name="Mars Attack",
+        playlist_id=7,
+        playlist_name="Saison 3",
+        image_path="C:/m.png",
+        description_template="Nouvel épisode",
+    )
+
+
+def test_keyword_order_and_show_order():
+    assert find_match("MARS ATTACK BONUS 3.mp3", [MARS]).playlist_id == 9
+    other = ShowFolder(show_id=5, show_name="Autre", folder="D:/P", rules=[KeywordRule("MARS")])
+    assert find_match("MARS ATTACK 1.mp3", [other, MARS]).show_id == 5
+    assert find_match("MARS ATTACK 1.mp3", [MARS, other]).show_id == 1
+
+
+def test_keyword_is_required():
+    assert find_match("Episode 12.mp3", [MARS, SILICON]) is None
+    assert find_match("x.mp3", [ShowFolder(show_id=1, folder="D:/P")]) is None
+
+
+def test_match_ignores_case_accents_and_punctuation():
+    assert find_match("le_debrief-44.mp3", [SILICON]).show_id == 2
 
 
 @pytest.mark.parametrize(
@@ -27,44 +74,35 @@ DEBRIEF = Rule(keyword="Le Débrief", show_id=2)
     ],
 )
 def test_keyword_matches_ignoring_case_and_separators(filename):
-    assert find_rule(filename, [MARS]) is MARS
+    assert find_match(filename, [MARS]).keyword == "MARS ATTACK"
 
 
 def test_accents_are_ignored():
-    assert find_rule("LE DEBRIEF 44.mp3", [DEBRIEF]) is DEBRIEF
+    assert find_match("LE DEBRIEF 44.mp3", [show_with("Le Débrief", 2)]).show_id == 2
 
 
 def test_oe_ligature_matches_oe_keyword():
-    rule = Rule(keyword="coeur", show_id=1)
-    assert find_rule("Cœur de pirate 3.mp3", [rule]) is rule
+    assert find_match("Cœur de pirate 3.mp3", [show_with("coeur")]) is not None
 
 
 def test_curly_apostrophe_matches_straight_keyword():
-    rule = Rule(keyword="L'Heure", show_id=1)
-    assert find_rule("L’Heure bleue.mp3", [rule]) is rule
+    assert find_match("L’Heure bleue.mp3", [show_with("L'Heure")]) is not None
 
 
 def test_en_dash_matches_space_separated_keyword():
-    rule = Rule(keyword="MARS ATTACK", show_id=1)
-    assert find_rule("MARS–ATTACK 2.mp3", [rule]) is rule
-
-
-def test_first_matching_rule_wins():
-    generic = Rule(keyword="ATTACK", show_id=9)
-    assert find_rule("MARS ATTACK 1.mp3", [generic, MARS]) is generic
-    assert find_rule("MARS ATTACK 1.mp3", [MARS, generic]) is MARS
+    assert find_match("MARS–ATTACK 2.mp3", [show_with("MARS ATTACK")]) is not None
 
 
 def test_no_match_returns_none():
-    assert find_rule("interview_brut.mp3", [MARS, DEBRIEF]) is None
+    assert find_match("interview_brut.mp3", [MARS, SILICON]) is None
 
 
 def test_empty_keyword_never_matches():
-    assert find_rule("x.mp3", [Rule(keyword="  ", show_id=1)]) is None
+    assert find_match("x.mp3", [show_with("  ")]) is None
 
 
 def test_extension_is_not_part_of_match():
-    assert find_rule("episode.mp3", [Rule(keyword="mp3", show_id=1)]) is None
+    assert find_match("episode.mp3", [show_with("mp3")]) is None
 
 
 def test_episode_title_strips_extension_and_extra_spaces():

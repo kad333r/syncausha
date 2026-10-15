@@ -1,4 +1,4 @@
-"""Correspondance fichier → règle, titre/description d'épisode, validation des règles."""
+"""Correspondance fichier → émission et mot-clé, titre/description d'épisode, validation des règles."""
 from __future__ import annotations
 
 import re
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
-from syncausha.config import Rule
+from syncausha.config import Rule, ShowFolder
 from syncausha.i18n import msg
 
 MAX_TITLE_LENGTH = 140
@@ -28,13 +28,22 @@ def normalize(text: str) -> str:
     return _NON_ALNUM.sub(" ", folded).strip()
 
 
-def find_rule(filename: str, rules: list[Rule]) -> Rule | None:
-    """Première règle dont le mot-clé apparaît dans le nom du fichier (sans extension)."""
+def find_match(filename: str, shows: list[ShowFolder]) -> Rule | None:
+    """Première émission (dans l'ordre) dont un mot-clé (dans l'ordre) apparaît dans le nom du fichier."""
     name = normalize(Path(filename).stem)
-    for rule in rules:
-        keyword = normalize(rule.keyword)
-        if keyword and keyword in name:
-            return rule
+    for show in shows:
+        for keyword_rule in show.rules:
+            keyword = normalize(keyword_rule.keyword)
+            if keyword and keyword in name:
+                return Rule(
+                    keyword=keyword_rule.keyword,
+                    show_id=show.show_id,
+                    show_name=show.show_name,
+                    playlist_id=keyword_rule.playlist_id,
+                    playlist_name=keyword_rule.playlist_name,
+                    image_path=keyword_rule.image_path,
+                    description_template=keyword_rule.description_template,
+                )
     return None
 
 
