@@ -10,12 +10,14 @@ from syncausha.ausha_client import Playlist, Show
 from syncausha.config import Config, KeywordRule, ShowFolder, load_config
 from syncausha.i18n import tr
 from syncausha.journal import Journal
+from syncausha.rules import validate_image
 from syncausha.ui import controller as controller_module
 from syncausha.ui import shows_page as shows_page_module
 from syncausha.ui.controller import AppController
 from syncausha.ui.shows_page import ShowsPage
 
 RLM, FSI, PDI = "‏", "⁨", "⁩"
+ZWSP = "\u200b"
 MARS, SILICON = Show(1, "Mars Attack"), Show(2, "Silicon Talk")
 CATALOG = {MARS: [Playlist(7, "Saison 3"), Playlist(8, "Bonus")], SILICON: [Playlist(9, "Débrief")]}
 
@@ -139,11 +141,50 @@ def test_long_names_and_paths_are_cut_without_losing_the_keyword_count(controlle
     assert page.show_list.item(0).toolTip() == long_path
 
 
+@pytest.mark.parametrize("lang", ["en", "ar"])
+def test_long_folder_is_cut_in_the_middle_with_the_full_path_in_the_tooltip(controller, lang):
+    i18n.set_language(lang)
+    long_path = r"C:\Users\frmje\Documents\Podcasts\Enregistrements\2026\Mars"
+    page = make_page(controller, mars(folder=long_path))
+    page.folder.resize(500, 30)  # largeur contrôlée (page jamais affichée : pas d'événement de redimensionnement)
+    page._set_folder(long_path)
+    shown = page.folder.text()
+    assert "…" in shown and shown.startswith("C:\\") and shown.endswith("\\Mars")
+    assert page.folder.path() == long_path and page.folder.toolTip() == long_path
+    page.folder.resize(10_000, 30)
+    page._set_folder(long_path)
+    assert page.folder.text() == long_path
+
+
+def test_missing_image_path_can_wrap_in_the_narrow_image_column(controller, tmp_path):
+    page = make_page(controller, mars())
+    missing = str(tmp_path / "visuels" / "couverture_mars_attack.png")
+    page._set_image(missing)
+    shown = page.image_error.text()
+    assert shown.replace(ZWSP, "") == i18n.render(validate_image(missing))
+    assert "\\" + ZWSP in shown and "_" + ZWSP in shown  # coupures possibles dans le chemin sans espace
+    page._set_image("")
+    assert page.image_error.text() == ""
+
+
+def test_show_and_playlist_names_keep_their_order_in_arabic(controller):
+    """« 2024 Le Debrief » commence par des chiffres : non isolé, il s'afficherait « Le Debrief 2024 »."""
+    i18n.set_language("ar")
+    debrief = Show(3, "2024 Le Debrief")
+    show = ShowFolder(3, "2024 Le Debrief", r"F:\Debrief", r"F:\Debrief", [KeywordRule("DEBRIEF", 12, "2025 Saison 2")])
+    page = make_page(controller, show, catalog={debrief: [Playlist(12, "2025 Saison 2")]})
+    assert page.show_combo.currentText() == FSI + "2024 Le Debrief" + PDI
+    page.rule_list.setCurrentRow(0)
+    assert page.playlist_combo.currentText() == FSI + "2025 Saison 2" + PDI
+    page._on_catalog({debrief: []})  # playlist disparue d'Ausha : gardée sous son nom enregistré
+    assert page.playlist_combo.currentText() == FSI + "2025 Saison 2" + PDI
+
+
 def test_first_show_is_selected_when_the_page_opens(controller):
     page = make_page(controller, mars(), silicon())
     assert page.show_list.currentRow() == 0
     assert page.show_combo.currentData() == 1
-    assert page.folder.text() == r"D:\Mars"
+    assert page.folder.path() == r"D:\Mars"
 
 
 def test_adding_a_show_saves_it_with_its_folder_still_to_inventory(controller, syncs, tmp_path, french):
@@ -348,7 +389,7 @@ def test_new_rule_without_a_show_for_the_folder_prefills_a_new_show(controller, 
     page = make_page(controller, mars())
     page.start_new_rule(r"F:\Nouveau", "interview_brut")
     assert page.show_list.currentRow() == -1
-    assert page.folder.text() == r"F:\Nouveau"
+    assert page.folder.path() == r"F:\Nouveau"
     assert page.keyword.text() == "interview_brut"
     choose(page.show_combo, 2)
     page._save_show()
@@ -361,7 +402,7 @@ def test_select_show(controller):
     page = make_page(controller, mars(rules=[KeywordRule("MARS ATTACK")]), silicon())
     page.select_show(1)
     assert page.show_list.currentRow() == 1
-    assert (page.show_combo.currentData(), page.folder.text()) == (2, r"E:\Silicon")
+    assert (page.show_combo.currentData(), page.folder.path()) == (2, r"E:\Silicon")
     assert page.rule_list.count() == 0
     page.select_show(0)
     assert items(page.rule_list) == ["MARS ATTACK\nNo playlist"]

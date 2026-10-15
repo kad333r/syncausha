@@ -90,6 +90,7 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none;
 QMenu { background: $surface; border: 1px solid $border; padding: 4px; }
 QMenu::item { padding: 6px 18px; border-radius: 4px; }
 QMenu::item:selected { background: $hover; color: $text; }
+QMenu::right-arrow, QMenu::left-arrow { width: 16px; }
 QMenu::separator { height: 1px; background: $border; margin: 4px 8px; }
 QToolTip { background: $surface; color: $text; border: 1px solid $border; padding: 4px 6px; }
 """)

@@ -25,7 +25,9 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStyle,
     QStyledItemDelegate,
+    QStyleOptionFrame,
     QVBoxLayout,
     QWidget,
 )
@@ -44,6 +46,43 @@ LIST_WIDTH = 220  # listes des émissions et des mots-clés, alignées l'une sur
 # Largeur d'une ligne de texte de la liste : sans bordure, retraits (liste, ligne) ni barre de défilement.
 LIST_TEXT_WIDTH = LIST_WIDTH - 40
 COLUMN_SPACING = 16
+# Entre un champ et son bouton, entre deux boutons : sous un QFormLayout (écarts différents en largeur et en
+# hauteur), une rangée imbriquée n'hérite d'aucun écart et ses éléments se toucheraient.
+ROW_SPACING = 6
+LINE_EDIT_MARGIN = 2  # retrait du texte de chaque côté d'un QLineEdit, en plus du padding de la feuille de style
+ZWSP = "\u200b"  # point de coupure invisible
+
+
+class PathField(QLineEdit):
+    """Chemin en lecture seule. Trop long, il est coupé au milieu (début du chemin et dossier final visibles)
+    au lieu d'être tronqué au ras d'une lettre ; le chemin complet est dans l'infobulle."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setReadOnly(True)
+        self.setAlignment(leading_alignment() | Qt.AlignmentFlag.AlignVCenter)  # chemin latin à droite en arabe
+        self._path = ""
+
+    def path(self) -> str:
+        return self._path
+
+    def set_path(self, path: str) -> None:
+        self._path = path
+        self.setToolTip(path)
+        self._show_path()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._show_path()
+
+    def _show_path(self) -> None:
+        option = QStyleOptionFrame()
+        self.initStyleOption(option)
+        room = self.style().subElementRect(QStyle.SubElement.SE_LineEditContents, option, self).width()
+        margins = self.textMargins()
+        room -= margins.left() + margins.right() + 2 * LINE_EDIT_MARGIN
+        self.setText(self.fontMetrics().elidedText(self._path, Qt.TextElideMode.ElideMiddle, max(room, 0)))
+        self.setCursorPosition(0)
 
 
 class ReorderableList(QListWidget):
@@ -132,17 +171,17 @@ class ShowsPage(QWidget):
         self.show_combo.setPlaceholderText(tr("shows_show_placeholder"))
         self.show_combo.setItemDelegate(QStyledItemDelegate(self.show_combo))  # stylée par la feuille de style
         form.addRow(tr("shows_field_show"), self.show_combo)
-        self.folder = QLineEdit()
-        self.folder.setAlignment(leading_alignment() | Qt.AlignmentFlag.AlignVCenter)  # chemin latin à droite en arabe
-        self.folder.setReadOnly(True)
+        self.folder = PathField()
         self.folder.setPlaceholderText(tr("shows_no_folder"))
         folder_button = QPushButton(tr("common_choose"))
         folder_button.clicked.connect(self._choose_folder)
         folder_row = QHBoxLayout()
+        folder_row.setSpacing(ROW_SPACING)
         folder_row.addWidget(self.folder, 1)
         folder_row.addWidget(folder_button)
         form.addRow(tr("shows_field_folder"), folder_row)
         actions = QHBoxLayout()
+        actions.setSpacing(ROW_SPACING)
         self.show_error = make_label(object_name="error", wrap=True)
         actions.addWidget(self.show_error, 1)
         self.delete_show_button = QPushButton(tr("shows_delete"))
@@ -209,10 +248,18 @@ class ShowsPage(QWidget):
         choose_button.clicked.connect(self._choose_image)
         remove_button = QPushButton(tr("rules_remove_image"))
         remove_button.clicked.connect(lambda _=False: self._set_image(""))
-        image_column.addWidget(choose_button)
-        image_column.addWidget(remove_button)
+        # Côte à côte : la colonne reste moins haute que le formulaire voisin, même avec un message d'erreur,
+        # et la page tient sans défiler à la taille par défaut de la fenêtre.
+        image_buttons = QHBoxLayout()
+        image_buttons.setSpacing(ROW_SPACING)
+        image_buttons.addWidget(choose_button)
+        image_buttons.addWidget(remove_button)
+        image_column.addLayout(image_buttons)
         self.image_error = make_label(object_name="error", wrap=True)
-        self.image_error.setFixedWidth(PREVIEW_SIZE + 40)
+        # Aussi large que les boutons, jamais plus, et au moins un peu plus que l'aperçu (la colonne ne change pas
+        # de largeur quand un message apparaît) : le message passe à la ligne au lieu d'élargir la colonne.
+        self.image_error.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.image_error.setMinimumWidth(PREVIEW_SIZE + 40)
         image_column.addWidget(self.image_error)
         image_column.addStretch(1)
         card_layout.addLayout(image_column)
@@ -348,15 +395,16 @@ class ShowsPage(QWidget):
     def _fill_shows(self, selected: int | None) -> None:
         """Émissions Ausha ; l'émission enregistrée reste proposée si Ausha ne la renvoie pas (catalogue
         indisponible, accès retiré). Aucune n'est choisie d'office pour une nouvelle émission."""
-        items = [(show.name, show.id) for show in sorted(self.catalog, key=lambda s: s.name.casefold())]
+        # Noms isolés : en arabe, « 2024 Le Debrief » s'afficherait sinon « Le Debrief 2024 ».
+        items = [(isolate(show.name), show.id) for show in sorted(self.catalog, key=lambda s: s.name.casefold())]
         show = self._show
         if show.show_id and self._catalog_name(show.show_id) is None:
-            items.insert(0, (_show_name(show), show.show_id))
+            items.insert(0, (isolate(_show_name(show)), show.show_id))
         _set_combo_items(self.show_combo, items, selected, fallback=-1)
 
     def _set_folder(self, path: str) -> None:
         self._folder = os.path.normpath(path) if path else ""
-        self.folder.setText(self._folder)
+        self.folder.set_path(self._folder)
 
     def _choose_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, tr("dialog_choose_show_folder"), self._folder)
@@ -500,9 +548,10 @@ class ShowsPage(QWidget):
     def _fill_playlists(self, selected: int | None) -> None:
         playlists = self._show_playlists()
         items: list[tuple[str, int | None]] = [(tr("rules_no_playlist"), None)]
-        items += [(p.name, p.id) for p in sorted(playlists, key=lambda p: p.name.casefold())]
+        items += [(isolate(p.name), p.id) for p in sorted(playlists, key=lambda p: p.name.casefold())]
         if selected is not None and selected not in {p.id for p in playlists}:  # disparue d'Ausha : gardée
-            items.append((self._known_playlist_name(selected) or tr("rules_playlist_fallback", id=selected), selected))
+            name = self._known_playlist_name(selected)
+            items.append((isolate(name) if name else tr("rules_playlist_fallback", id=selected), selected))
         _set_combo_items(self.playlist_combo, items, selected)
 
     def _known_playlist_name(self, playlist_id: int) -> str:
@@ -520,7 +569,8 @@ class ShowsPage(QWidget):
             self.image_preview.setPixmap(pixmap.scaled(
                 PREVIEW_SIZE, PREVIEW_SIZE,
                 Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        self.image_error.setText(render(validate_image(path) or "") if path else "")
+        error = render(validate_image(path) or "") if path else ""
+        self.image_error.setText(_breakable(error))
 
     def _choose_image(self) -> None:
         start = str(Path(self._image_path).parent) if self._image_path else ""
@@ -602,6 +652,14 @@ class ShowsPage(QWidget):
 
 def _show_name(show: ShowFolder) -> str:
     return render(show.label())
+
+
+def _breakable(text: str) -> str:
+    """Texte qui peut passer à la ligne après « \\ », « / » et « _ » : dans l'étroite colonne de l'image, le
+    chemin d'une image introuvable (sans espace) serait sinon tronqué."""
+    for char in "\\/_":
+        text = text.replace(char, char + ZWSP)
+    return text
 
 
 def _playlist_label(rule: KeywordRule) -> str:
