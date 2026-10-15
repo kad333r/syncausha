@@ -99,7 +99,7 @@ class SyncEngine:
             return CycleResult("not_configured", msg("cycle_add_show"))
         pending = [show for show in shows if show.needs_baseline()]
         if pending:
-            baseline = self._take_baselines(pending)
+            baseline = self._take_baselines(pending, shows)
             if baseline is not None:
                 return baseline
         try:
@@ -123,17 +123,25 @@ class SyncEngine:
         finally:
             client.close()
 
-    def _take_baselines(self, pending: list[ShowFolder]) -> CycleResult | None:
+    def _take_baselines(self, pending: list[ShowFolder], shows: list[ShowFolder]) -> CycleResult | None:
         """Dossiers tout juste choisis : leurs fichiers prêts sont ignorés (statut « ignore »), sans appel à Ausha.
 
-        Un dossier partagé par plusieurs émissions n'est lu qu'une fois. Un dossier introuvable ou
-        illisible est laissé au cycle normal, qui le signale ; None si aucun dossier n'a pu être lu.
+        folders du résultat : dossiers dont les émissions ont leur état des lieux fait.
+        Un dossier partagé par plusieurs émissions n'est lu qu'une fois. Un dossier déjà surveillé et
+        inventorié par une autre émission n'est pas relu : rien n'y est ignoré, ses fichiers en attente
+        (souvent « sans règle ») sont justement ceux que la nouvelle émission doit publier.
+        Un dossier introuvable ou illisible est laissé au cycle normal, qui le signale ; None si aucun
+        dossier n'est traité.
         Un fichier encore en cours de copie n'est pas concerné : il sera publié une fois prêt.
         Une entrée déjà envoyée (étape au-delà de « none ») non plus : son épisode existe peut-être.
         """
         count = 0
         folders: list[str] = []
         for folder, _ in _by_folder(pending):
+            if any(same_folder(other.folder, folder) and not other.needs_baseline() for other in shows):
+                log.info("Dossier %s déjà pris en compte par une autre émission : aucun fichier ignoré", folder)
+                folders.append(folder)
+                continue
             ready_files = self._ready_files(Path(folder))
             if ready_files is None:
                 continue
@@ -169,9 +177,14 @@ class SyncEngine:
         present: set[str] = set()
         missing: list[tuple[str, str]] = []
         for folder, group in _by_folder(shows):
+            if any(show.needs_baseline() for show in group):
+                # Introuvable pendant l'état des lieux : jamais lu avant qu'il soit fait, même s'il vient
+                # d'apparaître, sinon ses fichiers déjà présents seraient publiés.
+                missing += _missing(folder, group)
+                continue
             ready_files = self._ready_files(Path(folder))
             if ready_files is None:
-                missing += [(folder, show.show_name) for show in group]
+                missing += _missing(folder, group)
                 continue
             for ready in ready_files:
                 if self.cancel_event.is_set():
@@ -201,7 +214,7 @@ class SyncEngine:
                 present |= {path.name for path in Path(folder).iterdir()}
             except OSError as exc:
                 log.warning("Dossier illisible %s : %s", folder, exc)
-                missing += [(folder, show.show_name) for show in group]
+                missing += _missing(folder, group)
         if missing:
             # Pas d'oubli tant qu'un dossier manque : ses fichiers ignorés seraient publiés à son retour.
             folder, show = missing[0]
@@ -424,3 +437,8 @@ def _by_folder(shows: list[ShowFolder]) -> list[tuple[str, list[ShowFolder]]]:
         else:
             group.append(show)
     return groups
+
+
+def _missing(folder: str, shows: list[ShowFolder]) -> list[tuple[str, str]]:
+    """(dossier, émission) pour chaque émission d'un dossier introuvable ; son id si elle n'a pas de nom."""
+    return [(folder, show.show_name or str(show.show_id)) for show in shows]

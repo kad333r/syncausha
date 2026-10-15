@@ -899,3 +899,66 @@ def test_converted_1_0_settings_publish_nothing_again(env):
     add_file(env, "MARS ATTACK 13.mp3", b"13")
     assert env.engine.run_cycle().state == "ok"
     assert creates(env) == ["MARS ATTACK 12", "MARS ATTACK 13"]
+
+
+def test_folder_appearing_after_its_missed_baseline_is_not_published(env, tmp_path):
+    # Dossier introuvable pendant l'état des lieux, puis créé pendant la lecture d'un autre dossier.
+    other = tmp_path / "silicon"
+    env.client.shows[2] = "Silicon Talk"; env.client.playlists[2] = {}; env.client.episodes[2] = []
+    env.config.shows.append(ShowFolder(show_id=2, show_name="Silicon Talk", folder=str(other),
+                                       rules=[KeywordRule("DEBRIEF")]))
+
+    def scan(path):
+        if path == env.folder and not other.exists():
+            other.mkdir()
+            (other / "LE DEBRIEF 1 ancien.mp3").write_bytes(b"ancien")
+        return scan_ready_files(path, min_age_seconds=0)
+
+    engine = SyncEngine(env.config, env.journal, lambda cfg, cancel: env.client, scan=scan)
+    add_file(env, "MARS ATTACK 12.mp3")
+    result = engine.run_cycle()
+    assert (result.state, result.missing) == ("attention", ((str(other), "Silicon Talk"),))
+    assert creates(env) == ["MARS ATTACK 12"]
+    result = engine.run_cycle()
+    assert (result.state, result.count, result.folders) == ("baseline", 1, (str(other),))
+    assert creates(env) == ["MARS ATTACK 12"]
+
+
+@pytest.mark.parametrize("previous_folder", ["", "autre"], ids=["added", "moved"])
+def test_show_added_to_an_inventoried_folder_publishes_its_waiting_files(env, tmp_path, previous_folder):
+    # Les fichiers « sans règle » du dossier sont justement ceux que la nouvelle émission doit publier.
+    env.client.shows[2] = "Silicon Talk"; env.client.playlists[2] = {}; env.client.episodes[2] = []
+    add_file(env, "LE DEBRIEF 44.mp3")
+    env.engine.run_cycle()
+    assert only_entry(env).status is Status.SANS_REGLE
+    shared = env.config.shows[0].folder
+    baseline = str(tmp_path / previous_folder) if previous_folder else ""
+    env.config.shows.append(ShowFolder(show_id=2, show_name="Silicon Talk", folder=shared, baseline_folder=baseline,
+                                       rules=[KeywordRule("DEBRIEF")]))
+    result = env.engine.run_cycle()
+    assert (result.state, result.count, result.folders) == ("baseline", 0, (shared,))
+    assert env.journal.ignored() == []
+    env.config.shows[1].baseline_folder = shared  # le contrôleur enregistre l'état des lieux
+    assert env.engine.run_cycle().state == "ok"
+    assert [(c[1], c[2]) for c in env.client.calls if c[0] == "create"] == [(2, "LE DEBRIEF 44")]
+
+
+def test_folder_left_by_its_show_is_inventoried_again(env, tmp_path):
+    # L'émission 1 quitte le dossier : il n'est plus surveillé, la nouvelle émission en fait l'état des lieux.
+    shared = env.config.shows[0].folder
+    moved = tmp_path / "nouveau"; moved.mkdir()
+    env.config.shows[0].folder = str(moved)
+    add_file(env, "LE DEBRIEF 43.mp3")
+    env.config.shows.append(ShowFolder(show_id=2, show_name="Silicon Talk", folder=shared,
+                                       rules=[KeywordRule("DEBRIEF")]))
+    result = env.engine.run_cycle()
+    assert (result.state, result.count, result.folders) == ("baseline", 1, (str(moved), shared))
+    assert [e.filename for e in env.journal.ignored()] == ["LE DEBRIEF 43.mp3"]
+
+
+def test_missing_folder_of_an_unnamed_show_shows_its_id(env, tmp_path):
+    absent = str(tmp_path / "absent")
+    env.config.shows.append(ShowFolder(show_id=2, folder=absent, baseline_folder=absent))
+    result = env.engine.run_cycle()
+    assert result.missing == ((absent, "2"),)
+    assert render(result.message, lang="en") == f"Folder not found: {absent} (2)"
