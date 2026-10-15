@@ -159,6 +159,39 @@ def test_create_a_rule_opens_the_show_of_the_file_folder(controller, french):
     assert requested == [(r"D:\Podcasts", "interview_brut")]
 
 
+@pytest.mark.parametrize(
+    "folders,expected",
+    [
+        ([r"D:\Podcasts", "d:/podcasts/", ""], r"D:\Podcasts"),  # un seul dossier surveillé (écrit de deux façons)
+        ([r"D:\Podcasts", r"E:\Autre"], ""),  # plusieurs : aucun n'est deviné
+    ],
+)
+def test_create_a_rule_on_a_file_from_1_0_opens_the_only_watched_folder(controller, french, folders, expected):
+    set_shows(controller, *[ShowFolder(i + 1, f"Show {i}", folder, folder) for i, folder in enumerate(folders)])
+    controller.journal.ensure("h1", "interview_brut.mp3", 1)  # ligne du journal 1.0 : dossier inconnu
+    controller.journal.update("h1", status=Status.SANS_REGLE, last_error=msg("err_no_rule"))
+    page = ActivityPage(controller)
+    requested = []
+    page.create_rule_requested.connect(lambda folder, keyword: requested.append((folder, keyword)))
+    button(page, "Créer une règle").click()
+    assert requested == [(expected, "interview_brut")]
+
+
+def test_a_broken_rule_from_1_0_opens_the_show_of_the_only_watched_folder(controller, french):
+    set_shows(
+        controller,
+        ShowFolder(1, "Silicon Talk", r"D:\Podcasts", r"D:\Podcasts", [KeywordRule("DEBRIEF")]),
+        ShowFolder(2, "Mars Attack", r"D:\Podcasts", r"D:\Podcasts", [KeywordRule("MARS ATTACK")]),
+    )
+    controller.journal.ensure("h1", "MARS ATTACK 13.mp3", 1)  # ligne du journal 1.0 : dossier inconnu
+    controller.journal.update("h1", status=Status.REGLE_CASSEE, last_error=msg("rule_err_show_missing", show="Mars Attack"))
+    page = ActivityPage(controller)
+    requested = []
+    page.edit_show_requested.connect(requested.append)
+    button(page, "Modifier l'émission").click()
+    assert requested == [1]
+
+
 def test_a_broken_rule_opens_the_show_whose_keyword_matched(controller, french):
     set_shows(
         controller,

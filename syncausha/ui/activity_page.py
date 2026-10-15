@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QDateTime, QLocale, Qt, QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
-from syncausha.config import ShowFolder, same_folder
+from syncausha.config import ShowFolder, folder_key, same_folder
 from syncausha.i18n import msg, render, tr
 from syncausha.journal import Entry, Status
 from syncausha.rules import episode_title, find_match
@@ -147,10 +147,18 @@ class ActivityPage(QWidget):
         button.clicked.connect(lambda _=False, i=index: self.edit_show_requested.emit(i))
         return Row(render(msg("cycle_folder_missing_show", folder=folder, show=label)), "", button)
 
+    def _file_folder(self, entry: Entry) -> str:
+        """Dossier du fichier. Une ligne du journal 1.0 n'en a pas : le seul dossier surveillé s'il n'y en a qu'un
+        (celui des réglages 1.0), sinon aucun."""
+        if entry.folder:
+            return entry.folder
+        watched = watched_shows(self.controller.config)
+        return watched[0].folder if len({folder_key(show.folder) for show in watched}) == 1 else ""
+
     def _matching_show(self, entry: Entry) -> int:
         """Émission du dossier du fichier dont un mot-clé correspond (celle qui l'a pris), sinon la première de
         ce dossier, sinon -1."""
-        in_folder = self._shows_in(entry.folder)
+        in_folder = self._shows_in(self._file_folder(entry))
         matched = [i for i, show in in_folder if find_match(entry.filename, [show])]
         return (matched or [i for i, _ in in_folder] or [-1])[0]
 
@@ -158,7 +166,7 @@ class ActivityPage(QWidget):
         if entry.status is Status.SANS_REGLE:
             button = QPushButton(tr("activity_create_rule"))
             button.clicked.connect(
-                lambda _=False, e=entry: self.create_rule_requested.emit(e.folder, Path(e.filename).stem)
+                lambda _=False, e=entry: self.create_rule_requested.emit(self._file_folder(e), Path(e.filename).stem)
             )
         elif entry.status is Status.REGLE_CASSEE:
             button = QPushButton(tr("activity_edit_show"))
