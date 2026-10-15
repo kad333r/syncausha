@@ -66,12 +66,12 @@ Un ancien `watch_folder` sans aucune règle ne produit aucune émission (rien à
 
 ## 5. Déroulé d'un cycle
 
-1. Pause, jeton absent, aucune émission avec dossier → fin (états existants : `paused`, `not_configured`).
-2. **État des lieux par émission :** pour chaque émission dont `folder ≠ baseline_folder`, les fichiers prêts de son dossier qui ne sont pas déjà dans un statut final passent en `ignore` (aucun appel à Ausha). Si plusieurs émissions partagent ce dossier, il n'est analysé qu'une fois. Le résultat du cycle (`baseline`) liste les émissions traitées ; le contrôleur enregistre leur `baseline_folder = folder`, notifie une fois (« {n} fichiers déjà présents ignorés »), puis relance un cycle normal.
+1. Aucune émission avec dossier ou jeton absent → fin (`not_configured`). En pause, seul l'état des lieux (étape 2, sans appel à Ausha) est fait, puis fin (`paused`) : un dossier choisi pendant la pause est inventorié tout de suite, et les fichiers déposés ensuite seront publiés à la reprise.
+2. **État des lieux par émission :** pour chaque émission dont `folder ≠ baseline_folder`, les fichiers prêts de son dossier qui ne sont pas déjà dans un statut final passent en `ignore` (aucun appel à Ausha). Si plusieurs émissions partagent ce dossier, il n'est analysé qu'une fois. Le résultat du cycle (`baseline`) liste les émissions traitées ; le contrôleur enregistre leur `baseline_folder = folder`, notifie une fois (« {n} fichiers déjà présents ignorés »), puis relance un cycle normal (sauf en pause).
 3. **Dossiers :** chaque dossier distinct (comparaison insensible à la casse, chemin normalisé) est lu une fois. Un dossier introuvable n'arrête plus le cycle : les émissions concernées sont signalées (message « Dossier introuvable : {folder} ({show}) », une notification au changement d'état), les autres dossiers sont traités. L'état global est `attention` s'il y a un dossier introuvable ou des fichiers à traiter.
 4. **Correspondance :** pour un fichier d'un dossier, on parcourt les émissions de ce dossier dans l'ordre de la liste, puis leurs mots-clés dans l'ordre ; la première correspondance (même normalisation qu'aujourd'hui : casse, accents, ponctuation) donne l'émission et la règle. Aucune → `sans_regle`.
 5. Validation, anti-doublon, publication par étapes, reprise, essai à blanc, gestion des erreurs : inchangés, l'émission venant du `ShowFolder` et la playlist/image/description de la `KeywordRule`.
-6. `forget_unresolved` reçoit l'union des noms présents dans tous les dossiers lus.
+6. `forget_unresolved` reçoit, dossier par dossier, les noms présents mais pas lus à ce cycle (fichier pas encore prêt) : leur entrée est gardée ; un homonyme lu dans un autre dossier ne compte pas.
 
 ## 6. Interface
 
